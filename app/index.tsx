@@ -2,16 +2,18 @@ import { Ionicons } from '@expo/vector-icons'
 import { Link, useRouter } from 'expo-router'
 import { useState } from 'react'
 import { Alert, Image, ImageBackground, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import { useAuthLocale } from '../lib/auth-locale-context'
 import { supabase } from '../lib/supabase'
 
 export default function LoginScreen() {
   const router = useRouter()
+  const { lang, setLang, t } = useAuthLocale()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
 
   const handleLogin = async () => {
     const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
-    if (error) { Alert.alert('Hata', error.message); return }
+    if (error) { Alert.alert(t.common.errorTitle, error.message); return }
     router.replace('/(tabs)')
   }
 
@@ -21,39 +23,38 @@ export default function LoginScreen() {
         <View style={styles.card}>
           <Image source={require('../assets/images/logo.png')} style={styles.logo} resizeMode="contain" />
           <View style={{ flexDirection: 'row', justifyContent: 'center', marginBottom: 8, gap: 12 }}>
-            <TouchableOpacity>
-              <Text style={{ fontSize: 12, color: '#3333cc', fontWeight: '700' }}>🇹🇷 Türkçe</Text>
+            <TouchableOpacity onPress={() => setLang('tr')}>
+              <Text style={{ fontSize: 12, color: lang === 'tr' ? '#3333cc' : '#aaaaaa', fontWeight: lang === 'tr' ? '700' : '600' }}>{t.login.langTr}</Text>
             </TouchableOpacity>
             <Text style={{ fontSize: 12, color: '#aaaaaa' }}>|</Text>
-            <TouchableOpacity>
-              <Text style={{ fontSize: 12, color: '#aaaaaa', fontWeight: '600' }}>🇬🇧 English</Text>
+            <TouchableOpacity onPress={() => setLang('en')}>
+              <Text style={{ fontSize: 12, color: lang === 'en' ? '#3333cc' : '#aaaaaa', fontWeight: lang === 'en' ? '700' : '600' }}>{t.login.langEn}</Text>
             </TouchableOpacity>
           </View>
           <View style={styles.inputRow}>
             <Ionicons name="person-circle-outline" size={22} color="#3333cc" />
-            <TextInput placeholder="Username / E-mail" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" style={styles.input} />
+            <TextInput placeholder={t.login.placeholderEmail} value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" style={styles.input} />
           </View>
           <View style={styles.inputRow}>
             <Ionicons name="lock-closed-outline" size={22} color="#3333cc" />
-            <TextInput placeholder="******" value={password} onChangeText={setPassword} secureTextEntry style={styles.input} />
+            <TextInput placeholder={t.login.placeholderPassword} value={password} onChangeText={setPassword} secureTextEntry style={styles.input} />
           </View>
-          <Text style={styles.registerText}>{`Hen\u00FCz hesab\u0131n yok mu?`}</Text>
           <View style={styles.buttonRow}>
             <TouchableOpacity onPress={handleLogin} style={styles.loginBtn}>
-              <Text style={styles.loginBtnText}>{`Giri\u015F`}</Text>
+              <Text style={styles.loginBtnText}>{t.login.login}</Text>
             </TouchableOpacity>
             <Link href="/register" style={styles.registerBtn}>
-              <Text style={styles.registerBtnText}>{`Hesap Olu\u015Ftur`}</Text>
+              <Text style={styles.registerBtnText}>{t.login.createAccount}</Text>
             </Link>
           </View>
           <TouchableOpacity style={styles.googleBtn}>
             <Image source={{ uri: 'https://www.google.com/favicon.ico' }} style={{ width: 18, height: 18, marginRight: 8 }} />
-            <Text style={styles.googleBtnText}>{`Google ile Giri\u015F`}</Text>
+            <Text style={styles.googleBtnText}>{t.login.googleSignIn}</Text>
           </TouchableOpacity>
         </View>
         <View style={styles.forgotWrapper}>
-          <Link href="/" style={styles.forgotBtn}>
-            <Text style={styles.forgotBtnText}>{`\u015Fifremi Unuttum`}</Text>
+          <Link href="/forgot-password" style={styles.forgotBtn}>
+            <Text style={styles.forgotBtnText}>{t.login.forgotPassword}</Text>
           </Link>
         </View>
       </View>
@@ -63,7 +64,7 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   bg: { flex: 1 },
-  wrapper: { flex: 1, justifyContent: 'center', paddingBottom: 0 },
+  wrapper: { flex: 1, justifyContent: 'center', paddingBottom: 0, marginHorizontal: 28 },
   card: { backgroundColor: 'white', paddingHorizontal: 20, paddingVertical: 12, borderTopLeftRadius: 40, borderTopRightRadius: 40, borderBottomLeftRadius: 40, borderBottomRightRadius: 40 },
   langRow: { position: 'absolute', top: 52, right: 16, zIndex: 2, flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center' },
   langBtn: { paddingHorizontal: 6, paddingVertical: 2 },

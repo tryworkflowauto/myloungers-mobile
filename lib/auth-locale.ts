@@ -1,0 +1,98 @@
+export type AuthLang = 'tr' | 'en'
+
+export const authLocale = {
+  tr: {
+    common: {
+      errorTitle: 'Hata',
+      ok: 'Tamam',
+    },
+    login: {
+      placeholderEmail: 'Kullanıcı adı / E-posta',
+      placeholderPassword: '******',
+      login: 'Giriş',
+      createAccount: 'Hesap Oluştur',
+      googleSignIn: 'Google ile Giriş',
+      forgotPassword: 'Şifremi Unuttum',
+      langTr: '🇹🇷 Türkçe',
+      langEn: '🇬🇧 English',
+    },
+    register: {
+      tagline: 'My Loungers Dünyasına',
+      welcome: 'HOŞ GELDİNİZ',
+      hint:
+        'E-posta adresini doğru yazdığın emin olmalısın, onay linki yazdığın adrese gönderilecektir.',
+      placeholderName: 'Ad Soyad',
+      placeholderEmail: 'E-Posta',
+      placeholderPassword: 'Şifre',
+      placeholderPasswordAgain: 'Şifre (Tekrar)',
+      save: 'Kaydet',
+      backToLogin: "Giriş'e Dön",
+      langTr: '🇹🇷 Türkçe',
+      langEn: '🇬🇧 English',
+      alertFillAll: 'Lütfen tüm alanları doldurun.',
+      alertPasswordMismatch: 'Şifreler eşleşmiyor.',
+      alertRegisterTitle: 'Kayıt',
+      alertRegisterBody: 'Hesabınız oluşturuldu. E-postanızı kontrol edin.',
+    },
+    forgot: {
+      title: 'Şifremi Unuttum',
+      hint: 'E-posta adresinizi girin, şifre sıfırlama linki gönderilecektir.',
+      placeholderEmail: 'E-Posta',
+      send: 'Gönder',
+      backToLogin: "Giriş'e Dön",
+      langTr: '🇹🇷 Türkçe',
+      langEn: '🇬🇧 English',
+      alertEnterEmail: 'Lütfen e-posta adresinizi girin.',
+      alertSentTitle: 'Gönderildi',
+      alertSentBody: 'Şifre sıfırlama bağlantısı e-posta adresinize gönderildi.',
+    },
+  },
+  en: {
+    common: {
+      errorTitle: 'Error',
+      ok: 'OK',
+    },
+    login: {
+      placeholderEmail: 'Username / E-mail',
+      placeholderPassword: '******',
+      login: 'Log in',
+      createAccount: 'Create account',
+      googleSignIn: 'Sign in with Google',
+      forgotPassword: 'Forgot password',
+      langTr: '🇹🇷 Türkçe',
+      langEn: '🇬🇧 English',
+    },
+    register: {
+      tagline: 'To the My Loungers world',
+      welcome: 'WELCOME',
+      hint:
+        'Make sure you enter your email correctly; the confirmation link will be sent to the address you provide.',
+      placeholderName: 'Full name',
+      placeholderEmail: 'E-mail',
+      placeholderPassword: 'Password',
+      placeholderPasswordAgain: 'Password (again)',
+      save: 'Save',
+      backToLogin: 'Back to login',
+      langTr: '🇹🇷 Türkçe',
+      langEn: '🇬🇧 English',
+      alertFillAll: 'Please fill in all fields.',
+      alertPasswordMismatch: 'Passwords do not match.',
+      alertRegisterTitle: 'Registration',
+      alertRegisterBody: 'Your account has been created. Please check your email.',
+    },
+    forgot: {
+      title: 'Forgot password',
+      hint: 'Enter your email address; a password reset link will be sent.',
+      placeholderEmail: 'E-mail',
+      send: 'Send',
+      backToLogin: 'Back to login',
+      langTr: '🇹🇷 Türkçe',
+      langEn: '🇬🇧 English',
+      alertEnterEmail: 'Please enter your email address.',
+      alertSentTitle: 'Sent',
+      alertSentBody: 'A password reset link has been sent to your email address.',
+    },
+  },
+} as const
+
+export type AuthLocaleTree = (typeof authLocale)[AuthLang]

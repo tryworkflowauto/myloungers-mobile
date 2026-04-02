@@ -2,10 +2,12 @@ import { Ionicons } from '@expo/vector-icons'
 import { Link, useRouter } from 'expo-router'
 import { useState } from 'react'
 import { Alert, Image, ImageBackground, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import { useAuthLocale } from '../lib/auth-locale-context'
 import { supabase } from '../lib/supabase'
 
 export default function RegisterScreen() {
   const router = useRouter()
+  const { lang, setLang, t } = useAuthLocale()
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -16,18 +18,18 @@ export default function RegisterScreen() {
     const name = fullName.trim()
     const mail = email.trim()
     if (!name || !mail || !password) {
-      Alert.alert('Hata', 'Lütfen tüm alanları doldurun.')
+      Alert.alert(t.common.errorTitle, t.register.alertFillAll)
       return
     }
     if (password !== passwordAgain) {
-      Alert.alert('Hata', 'Şifreler eşleşmiyor.')
+      Alert.alert(t.common.errorTitle, t.register.alertPasswordMismatch)
       return
     }
     setSubmitting(true)
     const { data, error } = await supabase.auth.signUp({ email: mail, password })
     setSubmitting(false)
     if (error) {
-      Alert.alert('Hata', error.message)
+      Alert.alert(t.common.errorTitle, error.message)
       return
     }
     const user = data.user
@@ -37,12 +39,12 @@ export default function RegisterScreen() {
         ad_soyad: name,
       })
       if (profileError) {
-        Alert.alert('Hata', profileError.message)
+        Alert.alert(t.common.errorTitle, profileError.message)
         return
       }
     }
-    Alert.alert('Kayıt', 'Hesabınız oluşturuldu. E-postanızı kontrol edin.', [
-      { text: 'Tamam', onPress: () => router.replace('/') },
+    Alert.alert(t.register.alertRegisterTitle, t.register.alertRegisterBody, [
+      { text: t.common.ok, onPress: () => router.replace('/') },
     ])
   }
 
@@ -52,15 +54,24 @@ export default function RegisterScreen() {
         <View style={styles.wrapper}>
           <View style={styles.card}>
             <Image source={require('../assets/images/logo.png')} style={styles.logo} resizeMode="contain" />
-            <Text style={styles.tagline}>My Loungers Dünyasına</Text>
-            <Text style={styles.welcome}>HOŞ GELDİNİZ</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'center', marginBottom: 8, gap: 12 }}>
+              <TouchableOpacity onPress={() => setLang('tr')}>
+                <Text style={{ fontSize: 12, color: lang === 'tr' ? '#3333cc' : '#aaaaaa', fontWeight: lang === 'tr' ? '700' : '600' }}>{t.register.langTr}</Text>
+              </TouchableOpacity>
+              <Text style={{ fontSize: 12, color: '#aaaaaa' }}>|</Text>
+              <TouchableOpacity onPress={() => setLang('en')}>
+                <Text style={{ fontSize: 12, color: lang === 'en' ? '#3333cc' : '#aaaaaa', fontWeight: lang === 'en' ? '700' : '600' }}>{t.register.langEn}</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.tagline}>{t.register.tagline}</Text>
+            <Text style={styles.welcome}>{t.register.welcome}</Text>
             <Text style={styles.hint}>
-              E-posta adresini doğru yazdığın emin olmalısın, onay linki yazdığın adrese gönderilecektir.
+              {t.register.hint}
             </Text>
             <View style={styles.inputRow}>
               <Ionicons name="person-outline" size={18} color="#3333cc" />
               <TextInput
-                placeholder="Ad Soyad"
+                placeholder={t.register.placeholderName}
                 value={fullName}
                 onChangeText={setFullName}
                 autoCapitalize="words"
@@ -70,7 +81,7 @@ export default function RegisterScreen() {
             <View style={styles.inputRow}>
               <Ionicons name="mail-outline" size={18} color="#3333cc" />
               <TextInput
-                placeholder="E-Posta"
+                placeholder={t.register.placeholderEmail}
                 value={email}
                 onChangeText={setEmail}
                 keyboardType="email-address"
@@ -81,7 +92,7 @@ export default function RegisterScreen() {
             <View style={styles.inputRow}>
               <Ionicons name="lock-closed-outline" size={18} color="#3333cc" />
               <TextInput
-                placeholder="Şifre"
+                placeholder={t.register.placeholderPassword}
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry
@@ -91,7 +102,7 @@ export default function RegisterScreen() {
             <View style={styles.inputRow}>
               <Ionicons name="lock-closed-outline" size={18} color="#3333cc" />
               <TextInput
-                placeholder="Şifre (Tekrar)"
+                placeholder={t.register.placeholderPasswordAgain}
                 value={passwordAgain}
                 onChangeText={setPasswordAgain}
                 secureTextEntry
@@ -103,13 +114,13 @@ export default function RegisterScreen() {
               disabled={submitting}
               style={[styles.saveBtn, submitting && styles.saveBtnDisabled]}
             >
-              <Text style={styles.saveBtnText}>Kaydet</Text>
+              <Text style={styles.saveBtnText}>{t.register.save}</Text>
             </TouchableOpacity>
           </View>
           <View style={styles.loginBelow}>
             <Link href="/" asChild>
               <TouchableOpacity style={styles.loginBtn}>
-                <Text style={styles.loginBtnText}>Giriş</Text>
+                <Text style={styles.loginBtnText}>{t.register.backToLogin}</Text>
               </TouchableOpacity>
             </Link>
           </View>
