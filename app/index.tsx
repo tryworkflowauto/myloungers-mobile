@@ -16,30 +16,44 @@ export default function LoginScreen() {
   }
 
   return (
-    <ImageBackground source={require('../assets/images/login-bg.jpg')} style={{flex:1}} resizeMode="cover">
-      <View style={{flex:0.4}} />
-      <View style={{backgroundColor:'white', borderTopLeftRadius:40, borderTopRightRadius:40, padding:30}}>
-        <Image source={require('../assets/images/logo.png')} style={{width:180, height:100, alignSelf:'center', marginBottom:20}} resizeMode="contain" />
-        <View style={{flexDirection:'row', borderWidth:1.5, borderColor:'#1a1aff', borderRadius:30, paddingHorizontal:14, paddingVertical:10, marginBottom:14, alignItems:'center', gap:8}}>
-          <Ionicons name="person-outline" size={18} color="#1a1aff" />
-          <TextInput placeholder="Username / E-mail" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" style={{flex:1}} />
-        </View>
-        <View style={{flexDirection:'row', borderWidth:1.5, borderColor:'#1a1aff', borderRadius:30, paddingHorizontal:14, paddingVertical:10, marginBottom:14, alignItems:'center', gap:8}}>
-          <Ionicons name="lock-closed-outline" size={18} color="#1a1aff" />
-          <TextInput placeholder="Şifre" value={password} onChangeText={setPassword} secureTextEntry style={{flex:1}} />
-        </View>
-        <Text style={{textAlign:'center', color:'#1a1aff', marginBottom:16}}>Henüz hesabın yok mu?</Text>
-        <View style={{flexDirection:'row', justifyContent:'space-around', marginBottom:16}}>
-          <TouchableOpacity onPress={handleLogin} style={{borderWidth:1.5, borderColor:'#0ABAB5', borderRadius:30, paddingHorizontal:30, paddingVertical:10}}>
-            <Text style={{color:'#0ABAB5', fontWeight:'600'}}>Giriş</Text>
+    <ImageBackground source={require('../assets/images/beach-bg.jpg')} style={styles.bg} resizeMode="cover">
+      <View style={styles.wrapper}>
+        <View style={styles.card}>
+          <Image source={require('../assets/images/logo.png')} style={styles.logo} resizeMode="contain" />
+          <View style={{ flexDirection: 'row', justifyContent: 'center', marginBottom: 8, gap: 12 }}>
+            <TouchableOpacity>
+              <Text style={{ fontSize: 12, color: '#3333cc', fontWeight: '700' }}>🇹🇷 Türkçe</Text>
+            </TouchableOpacity>
+            <Text style={{ fontSize: 12, color: '#aaaaaa' }}>|</Text>
+            <TouchableOpacity>
+              <Text style={{ fontSize: 12, color: '#aaaaaa', fontWeight: '600' }}>🇬🇧 English</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.inputRow}>
+            <Ionicons name="person-circle-outline" size={22} color="#3333cc" />
+            <TextInput placeholder="Username / E-mail" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" style={styles.input} />
+          </View>
+          <View style={styles.inputRow}>
+            <Ionicons name="lock-closed-outline" size={22} color="#3333cc" />
+            <TextInput placeholder="******" value={password} onChangeText={setPassword} secureTextEntry style={styles.input} />
+          </View>
+          <Text style={styles.registerText}>{`Hen\u00FCz hesab\u0131n yok mu?`}</Text>
+          <View style={styles.buttonRow}>
+            <TouchableOpacity onPress={handleLogin} style={styles.loginBtn}>
+              <Text style={styles.loginBtnText}>{`Giri\u015F`}</Text>
+            </TouchableOpacity>
+            <Link href="/(tabs)" style={styles.registerBtn}>
+              <Text style={styles.registerBtnText}>{`Hesap Olu\u015Ftur`}</Text>
+            </Link>
+          </View>
+          <TouchableOpacity style={styles.googleBtn}>
+            <Image source={{ uri: 'https://www.google.com/favicon.ico' }} style={{ width: 18, height: 18, marginRight: 8 }} />
+            <Text style={styles.googleBtnText}>{`Google ile Giri\u015F`}</Text>
           </TouchableOpacity>
-          <Link href="/" style={{borderWidth:1.5, borderColor:'#F5821F', borderRadius:30, paddingHorizontal:20, paddingVertical:10}}>
-            <Text style={{color:'#F5821F', fontWeight:'600'}}>Hesap Oluştur</Text>
-          </Link>
         </View>
-        <View style={{alignItems:'flex-end'}}>
-          <Link href="/" style={{backgroundColor:'#1a1aff', borderRadius:30, paddingHorizontal:20, paddingVertical:10}}>
-            <Text style={{color:'white', fontWeight:'600'}}>Şifremi Unuttum</Text>
+        <View style={styles.forgotWrapper}>
+          <Link href="/" style={styles.forgotBtn}>
+            <Text style={styles.forgotBtnText}>{`\u015Fifremi Unuttum`}</Text>
           </Link>
         </View>
       </View>
@@ -47,4 +61,26 @@ export default function LoginScreen() {
   )
 }
 
-const styles = StyleSheet.create({})
+const styles = StyleSheet.create({
+  bg: { flex: 1 },
+  wrapper: { flex: 1, justifyContent: 'center', paddingBottom: 0 },
+  card: { backgroundColor: 'white', paddingHorizontal: 20, paddingVertical: 12, borderTopLeftRadius: 40, borderTopRightRadius: 40, borderBottomLeftRadius: 40, borderBottomRightRadius: 40 },
+  langRow: { position: 'absolute', top: 52, right: 16, zIndex: 2, flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center' },
+  langBtn: { paddingHorizontal: 6, paddingVertical: 2 },
+  langBtnText: { fontSize: 12, color: '#3333cc', fontWeight: '600' },
+  langSep: { color: '#3333cc', fontSize: 12 },
+  logo: { width: 240, height: 145, alignSelf: 'center', marginBottom: 8 },
+  inputRow: { flexDirection: 'row', borderWidth: 1.5, borderColor: '#3333cc', borderRadius: 30, paddingHorizontal: 12, paddingVertical: 3, marginBottom: 10, alignItems: 'center', gap: 10 },
+  input: { flex: 1, fontSize: 15 },
+  registerText: { textAlign: 'center', color: '#3333cc', marginBottom: 10, fontSize: 14 },
+  buttonRow: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 10 },
+  loginBtn: { borderWidth: 1.5, borderColor: '#0ABAB5', borderRadius: 30, paddingHorizontal: 36, paddingVertical: 4 },
+  loginBtnText: { color: '#0ABAB5', fontWeight: '600', fontSize: 15 },
+  registerBtn: { borderWidth: 1.5, borderColor: '#F5821F', borderRadius: 30, paddingHorizontal: 24, paddingVertical: 4 },
+  registerBtnText: { color: '#F5821F', fontWeight: '600', fontSize: 15 },
+  googleBtn: { flexDirection: 'row', borderWidth: 1.5, borderColor: '#dddddd', borderRadius: 30, paddingVertical: 8, alignItems: 'center', justifyContent: 'center', marginTop: 12, backgroundColor: 'white' },
+  googleBtnText: { color: '#333333', fontWeight: '600', fontSize: 16 },
+  forgotWrapper: { alignItems: 'flex-end', paddingHorizontal: 20, marginTop: 10 },
+  forgotBtn: { backgroundColor: '#3333cc', borderRadius: 30, paddingHorizontal: 18, paddingVertical: 8 },
+  forgotBtnText: { color: 'white', fontWeight: '600', fontSize: 13, textTransform: 'capitalize' },
+})
