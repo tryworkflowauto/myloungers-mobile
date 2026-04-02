@@ -1,9 +1,9 @@
 import { StyleSheet, Text, View } from 'react-native'
 
-export default function HomeScreen() {
+export default function FavoritesScreen() {
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Ana Sayfa</Text>
+      <Text style={styles.title}>Favoriler</Text>
     </View>
   )
 }
