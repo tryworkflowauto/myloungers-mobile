@@ -42,7 +42,7 @@ export default function LoginScreen() {
             <TouchableOpacity onPress={handleLogin} style={styles.loginBtn}>
               <Text style={styles.loginBtnText}>{`Giri\u015F`}</Text>
             </TouchableOpacity>
-            <Link href="/(tabs)" style={styles.registerBtn}>
+            <Link href="/register" style={styles.registerBtn}>
               <Text style={styles.registerBtnText}>{`Hesap Olu\u015Ftur`}</Text>
             </Link>
           </View>
