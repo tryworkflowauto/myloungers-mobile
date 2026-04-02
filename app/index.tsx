@@ -17,7 +17,7 @@ export default function LoginScreen() {
 
   return (
     <ImageBackground source={require('../assets/images/login-bg.jpg')} style={{flex:1}} resizeMode="cover">
-      <View style={{flex:1}} />
+      <View style={{flex:0.4}} />
       <View style={{backgroundColor:'white', borderTopLeftRadius:40, borderTopRightRadius:40, padding:30}}>
         <Image source={require('../assets/images/logo.png')} style={{width:180, height:100, alignSelf:'center', marginBottom:20}} resizeMode="contain" />
         <View style={{flexDirection:'row', borderWidth:1.5, borderColor:'#1a1aff', borderRadius:30, paddingHorizontal:14, paddingVertical:10, marginBottom:14, alignItems:'center', gap:8}}>
