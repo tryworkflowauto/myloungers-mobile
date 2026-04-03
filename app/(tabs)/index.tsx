@@ -1,5 +1,4 @@
 import { Ionicons } from '@expo/vector-icons'
-import DateTimePicker from '@react-native-community/datetimepicker'
 import { Image } from 'expo-image'
 import { useRouter } from 'expo-router'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -46,13 +45,37 @@ const BANNER_SLIDES = [
   { id: 'b5', source: require('../../assets/images/10.png') },
 ] as const
 
-/** İl → ilçe listesi (bölge seçim modalı) */
-const IL_ILCE: Record<string, string[]> = {
-  Muğla: ['Bodrum', 'Marmaris', 'Fethiye', 'Dalaman', 'Datça', 'Köyceğiz'],
-  Antalya: ['Kaş', 'Kemer', 'Alanya', 'Manavgat', 'Serik', 'Muratpaşa'],
-  İzmir: ['Çeşme', 'Alaçatı', 'Foça', 'Urla', 'Karşıyaka'],
-  İstanbul: ['Beşiktaş', 'Kadıköy', 'Beyoğlu', 'Üsküdar', 'Sarıyer'],
-  Aydın: ['Kuşadası', 'Didim', 'Söke'],
+/** Bölge → il → ilçe (bölge seçim modalı) */
+const BOLGELER: Record<string, Record<string, string[]>> = {
+  Ege: {
+    Muğla: ['Bodrum', 'Marmaris', 'Fethiye', 'Dalaman', 'Datça', 'Köyceğiz', 'Ortaca', 'Ula'],
+    İzmir: ['Çeşme', 'Alaçatı', 'Foça', 'Urla', 'Karşıyaka', 'Seferihisar', 'Dikili', 'Aliağa'],
+    Aydın: ['Kuşadası', 'Didim', 'Söke', 'Davutlar'],
+    Çanakkale: ['Gökçeada', 'Bozcaada', 'Ayvacık', 'Ezine'],
+  },
+  Akdeniz: {
+    Antalya: ['Kaş', 'Kemer', 'Alanya', 'Manavgat', 'Serik', 'Muratpaşa', 'Finike', 'Demre', 'Gazipaşa'],
+    Mersin: ['Erdemli', 'Silifke', 'Anamur', 'Bozyazı', 'Tarsus'],
+    Adana: ['Karataş', 'Yumurtalık', 'Ceyhan'],
+    Hatay: ['İskenderun', 'Samandağ', 'Arsuz', 'Dörtyol'],
+  },
+  Marmara: {
+    İstanbul: ['Beşiktaş', 'Kadıköy', 'Beyoğlu', 'Üsküdar', 'Sarıyer', 'Adalar', 'Şile', 'Bakırköy'],
+    Bursa: ['Mudanya', 'Gemlik', 'Erdek', 'Bandırma'],
+    Balıkesir: ['Ayvalık', 'Erdek', 'Marmara', 'Burhaniye', 'Edremit'],
+    Tekirdağ: ['Şarköy', 'Marmara Ereğlisi', 'Barbaros'],
+    Yalova: ['Çınarcık', 'Armutlu', 'Termal'],
+    Kocaeli: ['Gebze', 'Darıca', 'Karamürsel'],
+    Edirne: ['Enez', 'Keşan'],
+    Kırklareli: ['Kıyıköy'],
+  },
+}
+
+const WEEKDAY_LABELS_TR = ['P', 'P', 'S', 'Ç', 'P', 'C', 'C'] as const
+const WEEKDAY_LABELS_EN = ['M', 'T', 'W', 'T', 'F', 'S', 'S'] as const
+
+function sameCalendarDay(a: Date, b: Date) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
 }
 
 function firstPhotoSrc(fotograflar: unknown): string | null {
@@ -109,12 +132,15 @@ export default function HomeScreen() {
   const [minRating4, setMinRating4] = useState(false)
 
   const [showRegionModal, setShowRegionModal] = useState(false)
-  const [regionStep, setRegionStep] = useState<'il' | 'ilce'>('il')
+  const [regionStep, setRegionStep] = useState<'bolge' | 'il' | 'ilce'>('bolge')
+  const [selectedBolge, setSelectedBolge] = useState<string | null>(null)
   const [selectedIl, setSelectedIl] = useState<string | null>(null)
 
   const [searchMode, setSearchMode] = useState(false)
   const [searchResults, setSearchResults] = useState<TesisRow[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
+
+  const [facilityDropdownResults, setFacilityDropdownResults] = useState<TesisRow[]>([])
 
   const [date, setDate] = useState(() => {
     const d = new Date()
@@ -122,12 +148,15 @@ export default function HomeScreen() {
     return d
   })
   const [showDatePicker, setShowDatePicker] = useState(false)
+  const [calendarViewMonth, setCalendarViewMonth] = useState(() => new Date())
+  const [pendingDate, setPendingDate] = useState(() => new Date())
 
   const [favorites, setFavorites] = useState<Record<string, boolean>>({})
 
   const bannerRef = useRef<FlatList<(typeof BANNER_SLIDES)[number]>>(null)
   const bannerIndexRef = useRef(0)
   const bannerTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const skipFacilityDropdownSearchRef = useRef(false)
   const [bannerActiveIndex, setBannerActiveIndex] = useState(0)
 
   const locale = lang === 'tr' ? 'tr-TR' : 'en-US'
@@ -281,6 +310,33 @@ export default function HomeScreen() {
     setSearchMode(true)
   }, [region, facilityName, facilityTypeKey, minRating4])
 
+  useEffect(() => {
+    if (skipFacilityDropdownSearchRef.current) {
+      skipFacilityDropdownSearchRef.current = false
+      return
+    }
+    const q = facilityName.trim()
+    if (!q) {
+      setFacilityDropdownResults([])
+      return
+    }
+    const t = setTimeout(() => {
+      void (async () => {
+        const { data, error } = await supabase
+          .from('tesisler')
+          .select('id, ad, sehir, ilce, fotograflar')
+          .ilike('ad', `%${q}%`)
+          .limit(10)
+        if (error) {
+          setFacilityDropdownResults([])
+          return
+        }
+        setFacilityDropdownResults(((data ?? []) as unknown) as TesisRow[])
+      })()
+    }, 400)
+    return () => clearTimeout(t)
+  }, [facilityName])
+
   const onSearchFacilities = () => {
     void runSupabaseSearch()
   }
@@ -289,10 +345,27 @@ export default function HomeScreen() {
     setShowFilterModal(false)
   }
 
-  const onDateChange = (event: { type?: string }, selected?: Date) => {
-    if (Platform.OS === 'android') setShowDatePicker(false)
-    if (event.type === 'dismissed') return
-    if (selected) setDate(selected)
+  const openDatePickerModal = () => {
+    const d = new Date(date)
+    d.setHours(12, 0, 0, 0)
+    setPendingDate(d)
+    setCalendarViewMonth(new Date(d.getFullYear(), d.getMonth(), 1))
+    setShowDatePicker(true)
+  }
+
+  const shiftCalendarMonth = (delta: number) => {
+    setCalendarViewMonth((vm) => {
+      const next = new Date(vm)
+      next.setMonth(next.getMonth() + delta)
+      return next
+    })
+  }
+
+  const onCalendarConfirm = () => {
+    const d = new Date(pendingDate)
+    d.setHours(12, 0, 0, 0)
+    setDate(d)
+    setShowDatePicker(false)
   }
 
   const toggleFavorite = (id: string) => {
@@ -300,15 +373,30 @@ export default function HomeScreen() {
   }
 
   const openRegionModal = () => {
-    setRegionStep('il')
+    setRegionStep('bolge')
+    setSelectedBolge(null)
     setSelectedIl(null)
     setShowRegionModal(true)
   }
 
   const closeRegionModal = () => {
     setShowRegionModal(false)
-    setRegionStep('il')
+    setRegionStep('bolge')
+    setSelectedBolge(null)
     setSelectedIl(null)
+  }
+
+  const onRegionModalBack = () => {
+    if (regionStep === 'ilce') {
+      setRegionStep('il')
+      setSelectedIl(null)
+    } else if (regionStep === 'il') {
+      setRegionStep('bolge')
+      setSelectedIl(null)
+      setSelectedBolge(null)
+    } else {
+      closeRegionModal()
+    }
   }
 
   const renderFacilityCard = (item: TesisRow) => {
@@ -369,24 +457,110 @@ export default function HomeScreen() {
     )
   }
 
+  const calendarRows = useMemo(() => {
+    const y = calendarViewMonth.getFullYear()
+    const m = calendarViewMonth.getMonth()
+    const first = new Date(y, m, 1)
+    const pad = (first.getDay() + 6) % 7
+    const daysInMonth = new Date(y, m + 1, 0).getDate()
+    const cells: (number | null)[] = []
+    for (let i = 0; i < pad; i++) cells.push(null)
+    for (let d = 1; d <= daysInMonth; d++) cells.push(d)
+    const rows: (number | null)[][] = []
+    for (let i = 0; i < cells.length; i += 7) {
+      rows.push(cells.slice(i, i + 7))
+    }
+    const last = rows[rows.length - 1]
+    if (last && last.length < 7) {
+      while (last.length < 7) last.push(null)
+    }
+    return rows
+  }, [calendarViewMonth])
+
+  const weekdayLabels = lang === 'tr' ? WEEKDAY_LABELS_TR : WEEKDAY_LABELS_EN
+  const monthYearLabel = calendarViewMonth.toLocaleDateString(locale, { month: 'long', year: 'numeric' })
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      {Platform.OS === 'ios' ? (
-        <Modal visible={showDatePicker} transparent animationType="slide">
-          <View style={styles.modalBackdrop}>
-            <TouchableOpacity style={styles.modalDismiss} onPress={() => setShowDatePicker(false)} activeOpacity={1} />
-            <View style={styles.modalSheet}>
-              <DateTimePicker value={date} mode="date" display="spinner" onChange={onDateChange} />
-              <TouchableOpacity style={styles.modalDone} onPress={() => setShowDatePicker(false)}>
-                <Text style={styles.modalDoneText}>{t.common.ok}</Text>
+      <Modal visible={showDatePicker} animationType="slide" transparent>
+        <View style={styles.regionModalRoot}>
+          <SafeAreaView style={styles.regionModalSafe} edges={['bottom']}>
+            <View style={styles.calendarNavRow}>
+              <TouchableOpacity onPress={() => shiftCalendarMonth(-1)} hitSlop={12} accessibilityRole="button">
+                <Text style={styles.calendarNavArrow}>{'<'}</Text>
+              </TouchableOpacity>
+              <Text style={styles.calendarMonthTitle}>{monthYearLabel}</Text>
+              <TouchableOpacity onPress={() => shiftCalendarMonth(1)} hitSlop={12} accessibilityRole="button">
+                <Text style={styles.calendarNavArrow}>{'>'}</Text>
               </TouchableOpacity>
             </View>
-          </View>
-        </Modal>
-      ) : null}
-      {Platform.OS === 'android' && showDatePicker ? (
-        <DateTimePicker value={date} mode="date" display="default" onChange={onDateChange} />
-      ) : null}
+            <View style={styles.calendarWeekdayRow}>
+              {weekdayLabels.map((label, wi) => (
+                <Text key={wi} style={styles.calendarWeekdayCell}>
+                  {label}
+                </Text>
+              ))}
+            </View>
+            {calendarRows.map((row, ri) => (
+              <View key={`row-${ri}`} style={styles.calendarGridRow}>
+                {row.map((dayNum, di) => {
+                  if (dayNum == null) {
+                    return <View key={`e-${ri}-${di}`} style={styles.calendarDayCell} />
+                  }
+                  const cy = calendarViewMonth.getFullYear()
+                  const cm = calendarViewMonth.getMonth()
+                  const cellMidnight = new Date(cy, cm, dayNum)
+                  cellMidnight.setHours(0, 0, 0, 0)
+                  const todayMidnight = new Date()
+                  todayMidnight.setHours(0, 0, 0, 0)
+                  const isPast = cellMidnight.getTime() < todayMidnight.getTime()
+                  const cellDate = new Date(cy, cm, dayNum)
+                  cellDate.setHours(12, 0, 0, 0)
+                  const isToday = sameCalendarDay(cellDate, new Date())
+                  const isSelected = sameCalendarDay(pendingDate, cellDate)
+                  return (
+                    <TouchableOpacity
+                      key={`d-${ri}-${di}`}
+                      style={styles.calendarDayCell}
+                      disabled={isPast}
+                      activeOpacity={isPast ? 1 : 0.7}
+                      onPress={() => {
+                        const nd = new Date(cy, cm, dayNum)
+                        nd.setHours(12, 0, 0, 0)
+                        setPendingDate(nd)
+                      }}
+                    >
+                      {isSelected ? (
+                        <View style={styles.calendarDaySelected}>
+                          <Text style={styles.calendarDaySelectedText}>{dayNum}</Text>
+                        </View>
+                      ) : (
+                        <Text
+                          style={[
+                            styles.calendarDayText,
+                            isPast && styles.calendarDayPast,
+                            isToday && !isPast && styles.calendarDayToday,
+                          ]}
+                        >
+                          {dayNum}
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  )
+                })}
+              </View>
+            ))}
+            <View style={styles.calendarFooterRow}>
+              <TouchableOpacity style={styles.calendarBtnCancel} onPress={() => setShowDatePicker(false)} activeOpacity={0.85}>
+                <Text style={styles.calendarBtnCancelText}>İPTAL</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.calendarBtnOk} onPress={onCalendarConfirm} activeOpacity={0.85}>
+                <Text style={styles.calendarBtnOkText}>TAMAM</Text>
+              </TouchableOpacity>
+            </View>
+          </SafeAreaView>
+        </View>
+      </Modal>
 
       <Modal visible={showTypeModal} transparent animationType="fade">
         <Pressable style={styles.modalBackdrop} onPress={() => setShowTypeModal(false)}>
@@ -395,24 +569,24 @@ export default function HomeScreen() {
             {typeOptions.map((o) => (
               <TouchableOpacity
                 key={o.key}
-                style={styles.typeOption}
+                style={styles.typeOptionRow}
                 onPress={() => {
                   setFacilityTypeKey(o.key)
                   setShowTypeModal(false)
                 }}
+                activeOpacity={0.85}
               >
-                <Text style={styles.typeOptionText}>{o.label}</Text>
+                <View style={styles.typeOptionRowLeft}>
+                  <Ionicons
+                    name={o.key === 'hotel' ? 'bed-outline' : o.key === 'beach' ? 'umbrella-outline' : 'water-outline'}
+                    size={16}
+                    color="#0ABAB5"
+                  />
+                  <Text style={styles.typeOptionText}>{o.label}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={16} color="#94a3b8" />
               </TouchableOpacity>
             ))}
-            <TouchableOpacity
-              style={styles.typeOption}
-              onPress={() => {
-                setFacilityTypeKey(null)
-                setShowTypeModal(false)
-              }}
-            >
-              <Text style={[styles.typeOptionText, { opacity: 0.6 }]}>—</Text>
-            </TouchableOpacity>
           </Pressable>
         </Pressable>
       </Modal>
@@ -437,17 +611,41 @@ export default function HomeScreen() {
         <View style={styles.regionModalRoot}>
           <SafeAreaView style={styles.regionModalSafe} edges={['top']}>
             <View style={styles.regionModalHeader}>
-              <TouchableOpacity onPress={regionStep === 'ilce' ? () => setRegionStep('il') : closeRegionModal} hitSlop={12}>
-                <Ionicons name={regionStep === 'ilce' ? 'arrow-back' : 'close'} size={24} color="#0A1628" />
+              <TouchableOpacity onPress={onRegionModalBack} hitSlop={12}>
+                <Ionicons name={regionStep === 'bolge' ? 'close' : 'arrow-back'} size={24} color="#0A1628" />
               </TouchableOpacity>
               <Text style={styles.regionModalTitle}>
-                {regionStep === 'il' ? (lang === 'tr' ? 'İl seçin' : 'Select province') : selectedIl}
+                {regionStep === 'bolge'
+                  ? lang === 'tr'
+                    ? 'Bölge seçin'
+                    : 'Select region'
+                  : regionStep === 'il'
+                    ? selectedBolge ?? ''
+                    : selectedIl ?? ''}
               </Text>
               <View style={{ width: 24 }} />
             </View>
-            {regionStep === 'il' ? (
+            {regionStep === 'bolge' ? (
               <FlatList
-                data={Object.keys(IL_ILCE)}
+                data={Object.keys(BOLGELER)}
+                keyExtractor={(item) => item}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={styles.regionBolgeCard}
+                    onPress={() => {
+                      setSelectedBolge(item)
+                      setRegionStep('il')
+                    }}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.regionBolgeTitle}>{item}</Text>
+                    <Ionicons name="chevron-forward" size={20} color="#94a3b8" />
+                  </TouchableOpacity>
+                )}
+              />
+            ) : regionStep === 'il' ? (
+              <FlatList
+                data={selectedBolge ? Object.keys(BOLGELER[selectedBolge] ?? {}) : []}
                 keyExtractor={(item) => item}
                 renderItem={({ item }) => (
                   <TouchableOpacity
@@ -464,7 +662,9 @@ export default function HomeScreen() {
               />
             ) : (
               <FlatList
-                data={selectedIl ? IL_ILCE[selectedIl] ?? [] : []}
+                data={
+                  selectedBolge && selectedIl ? BOLGELER[selectedBolge]?.[selectedIl] ?? [] : []
+                }
                 keyExtractor={(item) => item}
                 renderItem={({ item }) => (
                   <TouchableOpacity
@@ -489,58 +689,61 @@ export default function HomeScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         nestedScrollEnabled
+        stickyHeaderIndices={[1]}
       >
-        <View style={styles.topHeader}>
-          <View style={styles.headerSide} />
-          <Image source={require('../../assets/images/logo.png')} style={styles.headerLogo} contentFit="contain" />
-          <View style={[styles.headerSide, styles.headerLang]}>
-            <TouchableOpacity onPress={() => setLang('tr')} style={styles.langChip}>
-              <Text style={[styles.langChipText, lang === 'tr' && styles.langChipActive]}>{`🇹🇷 ${t.home.langTr}`}</Text>
-            </TouchableOpacity>
-            <Text style={styles.langSep}>|</Text>
-            <TouchableOpacity onPress={() => setLang('en')} style={styles.langChip}>
-              <Text style={[styles.langChipText, lang === 'en' && styles.langChipActive]}>{`🇬🇧 ${t.home.langEn}`}</Text>
-            </TouchableOpacity>
+        <View>
+          <View style={styles.topHeader}>
+            <View style={styles.headerSide} />
+            <Image source={require('../../assets/images/logo.png')} style={styles.headerLogo} contentFit="contain" />
+            <View style={[styles.headerSide, styles.headerLang]}>
+              <TouchableOpacity onPress={() => setLang('tr')} style={styles.langChip}>
+                <Text style={[styles.langChipText, lang === 'tr' && styles.langChipActive]}>{`🇹🇷 ${t.home.langTr}`}</Text>
+              </TouchableOpacity>
+              <Text style={styles.langSep}>|</Text>
+              <TouchableOpacity onPress={() => setLang('en')} style={styles.langChip}>
+                <Text style={[styles.langChipText, lang === 'en' && styles.langChipActive]}>{`🇬🇧 ${t.home.langEn}`}</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
 
-        <View style={styles.bannerWrap}>
-          <FlatList
-            ref={bannerRef}
-            data={[...BANNER_SLIDES]}
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            keyExtractor={(item) => item.id}
-            onMomentumScrollEnd={onBannerScrollEnd}
-            getItemLayout={(_, index) => ({
-              length: SCREEN_W,
-              offset: SCREEN_W * index,
-              index,
-            })}
-            onScrollToIndexFailed={(info) => {
-              setTimeout(() => {
-                bannerRef.current?.scrollToIndex({ index: info.index, animated: false })
-              }, 100)
-            }}
-            renderItem={({ item }) => (
-              <View style={{ width: SCREEN_W }}>
-                <View style={styles.bannerSlide}>
-                  <Image source={item.source} style={styles.bannerImage} contentFit="cover" />
+          <View style={styles.bannerWrap}>
+            <FlatList
+              ref={bannerRef}
+              data={[...BANNER_SLIDES]}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              keyExtractor={(item) => item.id}
+              onMomentumScrollEnd={onBannerScrollEnd}
+              getItemLayout={(_, index) => ({
+                length: SCREEN_W,
+                offset: SCREEN_W * index,
+                index,
+              })}
+              onScrollToIndexFailed={(info) => {
+                setTimeout(() => {
+                  bannerRef.current?.scrollToIndex({ index: info.index, animated: false })
+                }, 100)
+              }}
+              renderItem={({ item }) => (
+                <View style={{ width: SCREEN_W }}>
+                  <View style={styles.bannerSlide}>
+                    <Image source={item.source} style={styles.bannerImage} contentFit="cover" />
+                  </View>
                 </View>
-              </View>
-            )}
-          />
-          <TouchableOpacity style={[styles.bannerArrow, styles.bannerArrowLeft]} onPress={() => goBanner(-1)} activeOpacity={0.85}>
-            <Text style={styles.bannerArrowText}>‹</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.bannerArrow, styles.bannerArrowRight]} onPress={() => goBanner(1)} activeOpacity={0.85}>
-            <Text style={styles.bannerArrowText}>›</Text>
-          </TouchableOpacity>
-          <View style={styles.bannerDots}>
-            {BANNER_SLIDES.map((_, i) => (
-              <View key={BANNER_SLIDES[i].id} style={[styles.bannerDot, i === bannerActiveIndex && styles.bannerDotActive]} />
-            ))}
+              )}
+            />
+            <TouchableOpacity style={[styles.bannerArrow, styles.bannerArrowLeft]} onPress={() => goBanner(-1)} activeOpacity={0.85}>
+              <Text style={styles.bannerArrowText}>‹</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.bannerArrow, styles.bannerArrowRight]} onPress={() => goBanner(1)} activeOpacity={0.85}>
+              <Text style={styles.bannerArrowText}>›</Text>
+            </TouchableOpacity>
+            <View style={styles.bannerDots}>
+              {BANNER_SLIDES.map((_, i) => (
+                <View key={BANNER_SLIDES[i].id} style={[styles.bannerDot, i === bannerActiveIndex && styles.bannerDotActive]} />
+              ))}
+            </View>
           </View>
         </View>
 
@@ -564,21 +767,56 @@ export default function HomeScreen() {
           </TouchableOpacity>
 
           <Text style={styles.fieldLabel}>{lang === 'tr' ? 'TARİH' : 'DATE'}</Text>
-          <TouchableOpacity style={styles.fieldRow} onPress={() => setShowDatePicker(true)} activeOpacity={0.85}>
+          <TouchableOpacity style={styles.fieldRow} onPress={openDatePickerModal} activeOpacity={0.85}>
             <Ionicons name="calendar-outline" size={18} color="#0A1628" />
             <Text style={[styles.fieldInput, styles.fieldFakeInput]}>{formatDate(date)}</Text>
           </TouchableOpacity>
 
           <Text style={styles.fieldLabel}>{lang === 'tr' ? 'TESİS ADI' : 'FACILITY NAME'}</Text>
-          <View style={styles.fieldRow}>
-            <Ionicons name="search-outline" size={18} color="#0A1628" />
-            <TextInput
-              placeholder={t.home.facilityNamePlaceholder}
-              value={facilityName}
-              onChangeText={setFacilityName}
-              style={styles.fieldInput}
-              placeholderTextColor="#94a3b8"
-            />
+          <View>
+            <View style={styles.fieldRow}>
+              <Ionicons name="search-outline" size={18} color="#0A1628" />
+              <TextInput
+                placeholder={t.home.facilityNamePlaceholder}
+                value={facilityName}
+                onChangeText={setFacilityName}
+                style={styles.fieldInput}
+                placeholderTextColor="#94a3b8"
+              />
+            </View>
+            {facilityDropdownResults.length > 0 ? (
+              <ScrollView
+                style={styles.facilityDropdown}
+                nestedScrollEnabled
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+              >
+                {facilityDropdownResults.map((item) => {
+                  const loc = [item.sehir, item.ilce].filter(Boolean).join(', ')
+                  return (
+                    <TouchableOpacity
+                      key={item.id}
+                      style={styles.facilityDropdownRow}
+                      onPress={() => {
+                        skipFacilityDropdownSearchRef.current = true
+                        setFacilityName(item.ad)
+                        setFacilityDropdownResults([])
+                      }}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={styles.facilityDropdownTitle} numberOfLines={2}>
+                        {item.ad}
+                      </Text>
+                      {loc ? (
+                        <Text style={styles.facilityDropdownSub} numberOfLines={1}>
+                          {loc}
+                        </Text>
+                      ) : null}
+                    </TouchableOpacity>
+                  )
+                })}
+              </ScrollView>
+            ) : null}
           </View>
 
           <View style={styles.searchButtonsRow}>
@@ -592,51 +830,53 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {loadError ? <Text style={styles.errorBanner}>{t.home.loadError}</Text> : null}
+        <View>
+          {loadError ? <Text style={styles.errorBanner}>{t.home.loadError}</Text> : null}
 
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>{t.home.categoriesTitle}</Text>
-          <TouchableOpacity activeOpacity={0.7}>
-            <Text style={styles.seeAll}>{t.home.seeAll} →</Text>
-          </TouchableOpacity>
-        </View>
-        <View style={styles.catStack}>
-          {categoryRows.map((c) => {
-            const img = c.row ? firstPhotoSrc(c.row.fotograflar) : null
-            const badgeText = c.key === 'beach' ? t.home.badgeNew : t.home.badgePopular
-            return (
-              <View key={c.key} style={styles.catCardVertical}>
-                {img ? (
-                  <Image source={{ uri: img }} style={styles.catImageFull} contentFit="cover" />
-                ) : (
-                  <View style={[styles.catImageFull, styles.catImagePh]}>
-                    <Ionicons name="image-outline" size={40} color="#0ABAB5" />
-                  </View>
-                )}
-                <View style={styles.catBadge}>
-                  <Text style={styles.catBadgeText}>{badgeText}</Text>
-                </View>
-                <View style={styles.catOverlay}>
-                  <Text style={styles.catLabel}>{c.label}</Text>
-                </View>
-              </View>
-            )
-          })}
-        </View>
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>{searchMode ? t.home.searchResultsTitle : t.home.popularTitle}</Text>
-        </View>
-
-        {loading || searchLoading ? (
-          <View style={styles.loaderWrap}>
-            <ActivityIndicator size="large" color="#0ABAB5" />
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>{t.home.categoriesTitle}</Text>
+            <TouchableOpacity activeOpacity={0.7}>
+              <Text style={styles.seeAll}>{t.home.seeAll} →</Text>
+            </TouchableOpacity>
           </View>
-        ) : listToRender.length === 0 ? (
-          <Text style={styles.empty}>{t.home.noResults}</Text>
-        ) : (
-          listToRender.map((item) => renderFacilityCard(item))
-        )}
+          <View style={styles.catStack}>
+            {categoryRows.map((c) => {
+              const img = c.row ? firstPhotoSrc(c.row.fotograflar) : null
+              const badgeText = c.key === 'beach' ? t.home.badgeNew : t.home.badgePopular
+              return (
+                <View key={c.key} style={styles.catCardVertical}>
+                  {img ? (
+                    <Image source={{ uri: img }} style={styles.catImageFull} contentFit="cover" />
+                  ) : (
+                    <View style={[styles.catImageFull, styles.catImagePh]}>
+                      <Ionicons name="image-outline" size={40} color="#0ABAB5" />
+                    </View>
+                  )}
+                  <View style={styles.catBadge}>
+                    <Text style={styles.catBadgeText}>{badgeText}</Text>
+                  </View>
+                  <View style={styles.catOverlay}>
+                    <Text style={styles.catLabel}>{c.label}</Text>
+                  </View>
+                </View>
+              )
+            })}
+          </View>
+
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>{searchMode ? t.home.searchResultsTitle : t.home.popularTitle}</Text>
+          </View>
+
+          {loading || searchLoading ? (
+            <View style={styles.loaderWrap}>
+              <ActivityIndicator size="large" color="#0ABAB5" />
+            </View>
+          ) : listToRender.length === 0 ? (
+            <Text style={styles.empty}>{t.home.noResults}</Text>
+          ) : (
+            listToRender.map((item) => renderFacilityCard(item))
+          )}
+        </View>
       </ScrollView>
     </SafeAreaView>
   )
@@ -696,8 +936,8 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     backgroundColor: '#fff',
     borderRadius: 16,
-    padding: 16,
-    marginBottom: 20,
+    padding: 6,
+    marginBottom: 18,
     ...Platform.select({
       ios: {
         shadowColor: '#0A1628',
@@ -709,7 +949,7 @@ const styles = StyleSheet.create({
     }),
   },
   fieldLabel: {
-    fontSize: 10,
+    fontSize: 6,
     fontWeight: '700',
     letterSpacing: 0.8,
     color: '#0A1628',
@@ -723,24 +963,26 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e2e8f0',
     borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 0,
+    marginBottom: 1,
     gap: 8,
     backgroundColor: '#fafbfc',
   },
-  fieldInput: { flex: 1, fontSize: 15, color: '#0A1628' },
+  fieldInput: { flex: 1, fontSize: 8, color: '#0A1628' },
   fieldFakeInput: { paddingVertical: 0 },
-  searchButtonsRow: { flexDirection: 'row', gap: 10, marginTop: 16 },
+  searchButtonsRow: { flexDirection: 'row', gap: 10, marginTop: 6 },
   btnPrimary: {
     flex: 1,
     backgroundColor: '#0ABAB5',
     borderRadius: 12,
-    paddingVertical: 14,
+    paddingVertical: 3,
+    paddingHorizontal: 4,
+    minHeight: 26,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  btnPrimaryText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  btnPrimaryText: { color: '#fff', fontWeight: '700', fontSize: 10 },
   btnSecondary: {
     flex: 1,
     flexDirection: 'row',
@@ -750,10 +992,12 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#0ABAB5',
     borderRadius: 12,
-    paddingVertical: 12,
+    paddingVertical: 3,
+    paddingHorizontal: 4,
+    minHeight: 26,
     backgroundColor: '#fff',
   },
-  btnSecondaryText: { color: '#0ABAB5', fontWeight: '700', fontSize: 15 },
+  btnSecondaryText: { color: '#0ABAB5', fontWeight: '700', fontSize: 10 },
   errorBanner: { color: '#dc2626', textAlign: 'center', marginHorizontal: 16, marginBottom: 8, fontSize: 13 },
   sectionHeader: {
     flexDirection: 'row',
@@ -863,9 +1107,67 @@ const styles = StyleSheet.create({
   tagText: { fontSize: 12, color: '#475569', fontWeight: '600' },
   modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(10,22,40,0.45)' },
   modalDismiss: { flex: 1 },
-  modalSheet: { backgroundColor: '#fff', borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingBottom: 24 },
-  modalDone: { alignItems: 'center', paddingVertical: 12 },
-  modalDoneText: { color: '#0ABAB5', fontWeight: '700', fontSize: 16 },
+  calendarNavRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  calendarNavArrow: { fontSize: 15, fontWeight: '700', color: '#0A1628', paddingHorizontal: 6 },
+  calendarMonthTitle: { fontSize: 13, fontWeight: '700', color: '#0A1628' },
+  calendarWeekdayRow: { flexDirection: 'row', paddingHorizontal: 12, paddingTop: 8, paddingBottom: 6 },
+  calendarWeekdayCell: { flex: 1, textAlign: 'center', fontSize: 9, fontWeight: '600', color: '#64748b' },
+  calendarGridRow: { flexDirection: 'row', paddingHorizontal: 12 },
+  calendarDayCell: {
+    flex: 1,
+    minWidth: 30,
+    minHeight: 30,
+    maxHeight: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  calendarDayText: { fontSize: 11, color: '#0A1628' },
+  calendarDayPast: { opacity: 0.3 },
+  calendarDayToday: { color: '#0ABAB5', fontWeight: '700' },
+  calendarDaySelected: {
+    width: 27,
+    height: 27,
+    borderRadius: 13.5,
+    backgroundColor: '#0ABAB5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  calendarDaySelectedText: { color: '#fff', fontWeight: '700', fontSize: 11 },
+  calendarFooterRow: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+  },
+  calendarBtnCancel: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    backgroundColor: '#f1f5f9',
+  },
+  calendarBtnCancelText: { fontSize: 12, fontWeight: '700', color: '#64748b' },
+  calendarBtnOk: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    backgroundColor: '#0ABAB5',
+  },
+  calendarBtnOkText: { fontSize: 12, fontWeight: '700', color: '#fff' },
   typeSheet: {
     margin: 24,
     backgroundColor: '#fff',
@@ -873,9 +1175,21 @@ const styles = StyleSheet.create({
     padding: 16,
     maxHeight: '70%',
   },
-  typeSheetTitle: { fontSize: 16, fontWeight: '700', color: '#0A1628', marginBottom: 12 },
-  typeOption: { paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
-  typeOptionText: { fontSize: 16, color: '#0A1628' },
+  typeSheetTitle: { fontSize: 17, fontWeight: '700', color: '#0A1628', marginBottom: 12 },
+  typeOptionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    marginBottom: 5,
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#0ABAB5',
+    backgroundColor: '#fafbfc',
+  },
+  typeOptionRowLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
+  typeOptionText: { fontSize: 13, color: '#0A1628' },
   filterSheet: {
     backgroundColor: '#fff',
     borderTopLeftRadius: 16,
@@ -900,6 +1214,21 @@ const styles = StyleSheet.create({
     borderBottomColor: '#f1f5f9',
   },
   regionModalTitle: { fontSize: 17, fontWeight: '700', color: '#0A1628' },
+  regionBolgeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#0ABAB5',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f8fafc',
+    backgroundColor: '#fff',
+  },
+  regionBolgeTitle: { flex: 1, fontSize: 16, fontWeight: '700', color: '#0A1628' },
   regionRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -910,4 +1239,27 @@ const styles = StyleSheet.create({
     borderBottomColor: '#f8fafc',
   },
   regionRowText: { fontSize: 16, color: '#0A1628' },
+  facilityDropdown: {
+    marginTop: 4,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    maxHeight: 150,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#0A1628',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.15,
+        shadowRadius: 4,
+      },
+      android: { elevation: 4 },
+    }),
+  },
+  facilityDropdownRow: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  facilityDropdownTitle: { fontSize: 12, fontWeight: '700', color: '#0A1628', marginBottom: 2 },
+  facilityDropdownSub: { fontSize: 10, color: '#94a3b8' },
 })
