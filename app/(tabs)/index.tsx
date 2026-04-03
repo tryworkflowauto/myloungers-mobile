@@ -3,7 +3,7 @@ import { Ionicons } from '@expo/vector-icons'
 import * as Location from 'expo-location'
 import { Image } from 'expo-image'
 import { useRouter } from 'expo-router'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Dimensions,
@@ -139,6 +139,58 @@ function firstTesisByTypeKeyword(rows: TesisRow[], type: 'hotel' | 'beach' | 'aq
     if (type === 'beach') return ad.includes('beach') || ad.includes('club')
     return ad.includes('aqua') || ad.includes('park')
   })
+}
+
+function ReviewsSection({ lang }: { lang: string }) {
+  const [reviews, setReviews] = React.useState<
+    { id: string; yorum: string; puan: number; musteri_adi: string; tesis_id: string; tesisler: { ad: string } | null }[]
+  >([])
+
+  React.useEffect(() => {
+    void supabase
+      .from('yorumlar')
+      .select('id, yorum, puan, musteri_adi, tesis_id, tesisler(ad)')
+      .eq('durum', 'onaylı')
+      .order('created_at', { ascending: false })
+      .limit(5)
+      .then(({ data }) => {
+        if (data)
+          setReviews(
+            data as {
+              id: string
+              yorum: string
+              puan: number
+              musteri_adi: string
+              tesis_id: string
+              tesisler: { ad: string } | null
+            }[],
+          )
+      })
+  }, [])
+
+  if (reviews.length === 0) return null
+
+  return (
+    <View style={{ marginTop: 32, paddingHorizontal: 16, marginBottom: 8 }}>
+      <Text style={{ fontSize: 20, fontWeight: '800', color: '#0A1628', marginBottom: 16 }}>
+        {lang === 'tr' ? 'Kullanıcılar Ne Diyor?' : 'What Users Say'}
+      </Text>
+      {reviews.map((r) => (
+        <View key={r.id} style={{ backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 12, shadowColor: '#0A1628', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 }}>
+          {r.tesisler?.ad ? (
+            <Text style={{ fontSize: 12, color: '#0ABAB5', fontWeight: '700', marginBottom: 4 }}>{r.tesisler.ad}</Text>
+          ) : null}
+          <View style={{ flexDirection: 'row', marginBottom: 6 }}>
+            {[1, 2, 3, 4, 5].map((s) => (
+              <Ionicons key={s} name="star" size={14} color={s <= Math.round(r.puan) ? '#FBBF24' : '#e2e8f0'} />
+            ))}
+          </View>
+          <Text style={{ fontSize: 14, color: '#334155', lineHeight: 20, marginBottom: 8 }}>{r.yorum}</Text>
+          <Text style={{ fontSize: 12, color: '#94a3b8', fontWeight: '600' }}>{r.musteri_adi ?? (lang === 'tr' ? 'Misafir' : 'Guest')}</Text>
+        </View>
+      ))}
+    </View>
+  )
 }
 
 export default function HomeScreen() {
@@ -1170,6 +1222,46 @@ export default function HomeScreen() {
           ) : (
             listToRender.map((item) => renderFacilityCard(item))
           )}
+
+          {/* Nasıl Çalışır */}
+          <View style={{ marginTop: 32, marginHorizontal: 16, backgroundColor: '#0A1628', borderRadius: 20, padding: 20 }}>
+            <Text style={{ fontSize: 20, fontWeight: '800', color: '#ffffff', marginBottom: 4 }}>
+              {lang === 'tr' ? 'Nasıl Çalışır?' : 'How It Works'}
+            </Text>
+            <Text style={{ fontSize: 13, color: '#94a3b8', marginBottom: 20 }}>
+              {lang === 'tr' ? '3 adımda şezlong rezervasyonu' : 'Reserve a sunbed in 3 steps'}
+            </Text>
+            {[
+              {
+                icon: 'search-outline' as const,
+                title: lang === 'tr' ? 'Tesis Seç' : 'Find a Venue',
+                desc: lang === 'tr' ? 'Konum, tip veya tarihe göre filtrele.' : 'Filter by location, type or date.',
+              },
+              {
+                icon: 'umbrella-outline' as const,
+                title: lang === 'tr' ? 'Şezlong Seç' : 'Pick a Sunbed',
+                desc: lang === 'tr' ? 'Tesis planı üzerinden istediğin şezlongu seç.' : 'Choose your sunbed on the venue map.',
+              },
+              {
+                icon: 'checkmark-circle-outline' as const,
+                title: lang === 'tr' ? 'Öde & Uzan' : 'Pay & Relax',
+                desc: lang === 'tr' ? 'Güvenli ödeme yap, QR kodunu göster.' : 'Pay securely and show your QR code.',
+              },
+            ].map((step, i) => (
+              <View key={i} style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 20, gap: 14 }}>
+                <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#E6FAF9', alignItems: 'center', justifyContent: 'center' }}>
+                  <Ionicons name={step.icon} size={22} color="#0ABAB5" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: '#ffffff', marginBottom: 2 }}>{`${i + 1}. ${step.title}`}</Text>
+                  <Text style={{ fontSize: 13, color: '#94a3b8' }}>{step.desc}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+
+          {/* Kullanıcılar Ne Diyor */}
+          <ReviewsSection lang={lang} />
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -1351,7 +1443,7 @@ const styles = StyleSheet.create({
   },
   popPress: { borderRadius: 16, overflow: 'hidden' },
   popImageWrap: { position: 'relative' },
-  popImage: { width: '100%', height: 200 },
+  popImage: { width: '100%', height: 140 },
   popImagePh: { backgroundColor: '#e0f7f6', alignItems: 'center', justifyContent: 'center' },
   popImageTop: {
     position: 'absolute',
@@ -1386,9 +1478,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   popBody: { padding: 14 },
-  popTitle: { fontSize: 17, fontWeight: '800', color: '#0A1628', marginBottom: 6 },
+  popTitle: { fontSize: 15, fontWeight: '800', color: '#0A1628', marginBottom: 6 },
   popLocRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 10 },
-  popLoc: { flex: 1, fontSize: 14, color: '#64748b' },
+  popLoc: { flex: 1, fontSize: 12, color: '#64748b' },
   tagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   tag: {
     backgroundColor: '#f1f5f9',
@@ -1398,7 +1490,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e2e8f0',
   },
-  tagText: { fontSize: 12, color: '#475569', fontWeight: '600' },
+  tagText: { fontSize: 11, color: '#475569', fontWeight: '600' },
   modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(10,22,40,0.45)' },
   modalDismiss: { flex: 1 },
   calendarNavRow: {
