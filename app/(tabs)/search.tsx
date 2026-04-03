@@ -100,6 +100,18 @@ function paramString(v: string | string[] | undefined): string {
   return ''
 }
 
+function getKategori(r: TesisRow): string[] {
+  if (Array.isArray(r.kategori)) return r.kategori
+  if (typeof r.kategori === 'string') {
+    try {
+      return JSON.parse(r.kategori)
+    } catch {
+      return []
+    }
+  }
+  return []
+}
+
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371
   const toRad = (d: number) => (d * Math.PI) / 180
@@ -159,6 +171,7 @@ export default function SearchScreen() {
   const [showTypeModal, setShowTypeModal] = useState(false)
   const [searchResults, setSearchResults] = useState<TesisRow[]>([])
   const [loading, setLoading] = useState(false)
+
   const [filterTab, setFilterTab] = useState<'all' | 'hotel' | 'beach' | 'aqua'>('all')
   const [kisiSayisi, setKisiSayisi] = useState<number | null>(null)
   const [showKisiModal, setShowKisiModal] = useState(false)
@@ -197,22 +210,7 @@ export default function SearchScreen() {
     setLoading(true)
 
     const runQuery = (selectCols: string) => {
-      let q = supabase.from('tesisler').select(selectCols)
-      const r = region.trim()
-      if (r.includes(',')) {
-        const parts = r.split(',').map((s) => s.trim())
-        const ilcePart = parts[0]
-        const sehirPart = parts[1]
-        if (ilcePart) q = q.ilike('ilce', `%${ilcePart}%`)
-        if (sehirPart) q = q.ilike('sehir', `%${sehirPart}%`)
-      } else if (r) {
-        const safe = r.replace(/%/g, '')
-        q = q.or(`sehir.ilike.%${safe}%,ilce.ilike.%${safe}%`)
-      }
-      if (facilityName.trim()) {
-        q = q.ilike('ad', `%${facilityName.trim()}%`)
-      }
-      return q.order('puan', { ascending: false })
+      return supabase.from('tesisler').select(selectCols).order('puan', { ascending: false })
     }
 
     const selectBase = 'id, ad, slug, kategori, sehir, ilce, fotograflar, puan, imkanlar'
@@ -230,8 +228,40 @@ export default function SearchScreen() {
     }
     setLoading(false)
     let out = (data as TesisRow[]) ?? []
-    if (facilityTypeKey) {
-      out = out.filter((row) => matchesFacilityType(row.ad, facilityTypeKey))
+
+    const reg = region.trim()
+    if (reg.includes(',')) {
+      const parts = reg.split(',').map((s) => s.trim())
+      const ilcePart = parts[0]
+      const sehirPart = parts[1]
+      if (ilcePart) {
+        out = out.filter(
+          (row) => row.ilce != null && String(row.ilce).toLowerCase().includes(ilcePart.toLowerCase()),
+        )
+      }
+      if (sehirPart) {
+        out = out.filter(
+          (row) => row.sehir != null && String(row.sehir).toLowerCase().includes(sehirPart.toLowerCase()),
+        )
+      }
+    } else if (reg) {
+      const safe = reg.replace(/%/g, '').toLowerCase()
+      out = out.filter((row) => {
+        const sehir = row.sehir ? String(row.sehir).toLowerCase() : ''
+        const ilce = row.ilce ? String(row.ilce).toLowerCase() : ''
+        return sehir.includes(safe) || ilce.includes(safe)
+      })
+    }
+    if (facilityName.trim()) {
+      const qn = facilityName.trim().toLowerCase()
+      out = out.filter((row) => row.ad.toLowerCase().includes(qn))
+    }
+    if (facilityTypeKey === 'hotel') {
+      out = out.filter((row) => getKategori(row).some((k) => k.toUpperCase().includes('HOTEL')))
+    } else if (facilityTypeKey === 'beach') {
+      out = out.filter((row) => getKategori(row).some((k) => k.toUpperCase().includes('BEACH')))
+    } else if (facilityTypeKey === 'aqua') {
+      out = out.filter((row) => getKategori(row).some((k) => k.toUpperCase().includes('AQUA')))
     }
     if (gpsKonum && hasLatLonCols) {
       out = out.filter((row) => {
@@ -249,7 +279,11 @@ export default function SearchScreen() {
 
   useEffect(() => {
     void runSearch()
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- initial search from route params only
+    const k = paramString(params.facilityTypeKey)
+    if (k === 'hotel') setFilterTab('hotel')
+    else if (k === 'beach') setFilterTab('beach')
+    else if (k === 'aqua') setFilterTab('aqua')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -317,18 +351,6 @@ export default function SearchScreen() {
 
   const weekdayLabels = lang === 'tr' ? WEEKDAY_LABELS_TR : WEEKDAY_LABELS_EN
   const monthYearLabel = calendarViewMonth.toLocaleDateString(locale, { month: 'long', year: 'numeric' })
-
-  const getKategori = (r: TesisRow): string[] => {
-    if (Array.isArray(r.kategori)) return r.kategori
-    if (typeof r.kategori === 'string') {
-      try {
-        return JSON.parse(r.kategori)
-      } catch {
-        return []
-      }
-    }
-    return []
-  }
 
   const filteredResults = useMemo(() => {
     let list: TesisRow[]

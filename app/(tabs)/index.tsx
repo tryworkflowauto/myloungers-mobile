@@ -1121,24 +1121,38 @@ export default function HomeScreen() {
           </View>
           <View style={styles.catStack}>
             {categoryRows.map((c) => {
-              const img = c.row ? firstPhotoSrc(c.row.fotograflar) : null
+              const img =
+                c.key === 'hotel'
+                  ? require('../../assets/images/tesis_kategorisi-otel.png')
+                  : c.key === 'beach'
+                    ? require('../../assets/images/tesis_kategorisi-beach.png')
+                    : require('../../assets/images/tesis_kategorsi-aquapark.png')
               const badgeText = c.key === 'beach' ? t.home.badgeNew : t.home.badgePopular
               return (
-                <View key={c.key} style={styles.catCardVertical}>
-                  {img ? (
-                    <Image source={{ uri: img }} style={styles.catImageFull} contentFit="cover" />
-                  ) : (
-                    <View style={[styles.catImageFull, styles.catImagePh]}>
-                      <Ionicons name="image-outline" size={40} color="#0ABAB5" />
-                    </View>
-                  )}
+                <TouchableOpacity
+                  key={c.key}
+                  style={styles.catCardVertical}
+                  activeOpacity={0.9}
+                  onPress={() => {
+                    router.push({
+                      pathname: '/(tabs)/search',
+                      params: {
+                        facilityTypeKey: c.key,
+                        region: '',
+                        date: new Date().toISOString(),
+                        facilityName: '',
+                      },
+                    })
+                  }}
+                >
+                  <Image source={img} style={styles.catImageFull} contentFit="cover" />
                   <View style={styles.catBadge}>
                     <Text style={styles.catBadgeText}>{badgeText}</Text>
                   </View>
                   <View style={styles.catOverlay}>
                     <Text style={styles.catLabel}>{c.label}</Text>
                   </View>
-                </View>
+                </TouchableOpacity>
               )
             })}
           </View>
