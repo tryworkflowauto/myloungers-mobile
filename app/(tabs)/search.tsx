@@ -507,7 +507,7 @@ export default function SearchScreen() {
 
       <View style={styles.headerRow}>
         <TouchableOpacity onPress={() => router.back()} hitSlop={12} accessibilityRole="button">
-          <Ionicons name="arrow-back" size={24} color="#0A1628" />
+          <Ionicons name="arrow-back" size={24} color="#ffffff" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{lang === 'tr' ? 'Tesis Ara' : 'Search facilities'}</Text>
         <View style={{ width: 24 }} />
@@ -713,20 +713,22 @@ export default function SearchScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#f0f4f8' },
-  scroll: { flex: 1 },
+  safe: { flex: 1, backgroundColor: '#ffffff' },
+  scroll: { flex: 1, backgroundColor: '#f0f4f8' },
   scrollContent: { paddingBottom: 32, paddingHorizontal: 16 },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
-    backgroundColor: '#fff',
+    backgroundColor: '#1a56db',
+    borderRadius: 14,
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 4,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
   },
-  headerTitle: { fontSize: 18, fontWeight: '800', color: '#0A1628' },
+  headerTitle: { fontSize: 18, fontWeight: '700', color: '#ffffff' },
   locText: { flex: 1, fontSize: 12, color: '#0A1628' },
   gpsBtn: { paddingHorizontal: 10, paddingVertical: 6 },
   gpsBtnText: { fontSize: 12, fontWeight: '700', color: '#0ABAB5' },
@@ -778,7 +780,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   searchOrangeBtn: {
-    backgroundColor: '#F97316',
+    backgroundColor: '#1a56db',
     borderRadius: 12,
     paddingVertical: 12,
     alignItems: 'center',
@@ -808,7 +810,7 @@ const styles = StyleSheet.create({
   resultCount: { fontSize: 13, color: '#64748b', marginBottom: 12 },
   loaderWrap: { paddingVertical: 40, alignItems: 'center' },
   card: {
-    marginBottom: 16,
+    marginBottom: 12,
     backgroundColor: '#fff',
     borderRadius: 16,
     overflow: 'hidden',
@@ -824,7 +826,7 @@ const styles = StyleSheet.create({
   },
   cardPress: { overflow: 'hidden' },
   cardImageWrap: { position: 'relative' },
-  cardImage: { width: '100%', height: 160 },
+  cardImage: { width: '100%', height: 140 },
   cardImagePh: { backgroundColor: '#e0f7f6', alignItems: 'center', justifyContent: 'center' },
   searchCardRatingPill: {
     position: 'absolute',
@@ -839,34 +841,34 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   searchCardRatingText: { color: '#fff', fontSize: 12, fontWeight: '700' },
-  cardBody: { padding: 14 },
-  cardTitle: { fontSize: 16, fontWeight: '800', color: '#0A1628', marginBottom: 8 },
-  badgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 },
+  cardBody: { paddingVertical: 10, paddingHorizontal: 10 },
+  cardTitle: { fontSize: 13, fontWeight: '800', color: '#0A1628', marginBottom: 6 },
+  badgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginBottom: 6 },
   typeBadge: {
     backgroundColor: '#e0f7f6',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
     borderRadius: 6,
     borderWidth: 1,
     borderColor: '#0ABAB5',
   },
-  typeBadgeText: { fontSize: 12, fontWeight: '700', color: '#0ABAB5' },
+  typeBadgeText: { fontSize: 10, fontWeight: '700', color: '#0ABAB5' },
   tagChip: {
     backgroundColor: '#f1f5f9',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
     borderRadius: 6,
   },
-  tagChipText: { fontSize: 12, color: '#475569', fontWeight: '600' },
-  cardLocRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 10 },
-  cardLoc: { flex: 1, fontSize: 14, color: '#64748b' },
+  tagChipText: { fontSize: 10, color: '#475569', fontWeight: '600' },
+  cardLocRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 8 },
+  cardLoc: { flex: 1, fontSize: 11, color: '#64748b' },
   loungerBtn: {
-    backgroundColor: '#F97316',
+    backgroundColor: '#1a56db',
     borderRadius: 10,
-    paddingVertical: 10,
+    paddingVertical: 7,
     alignItems: 'center',
   },
-  loungerBtnText: { color: '#fff', fontWeight: '800', fontSize: 14 },
+  loungerBtnText: { color: '#fff', fontWeight: '800', fontSize: 11 },
   modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(10,22,40,0.45)' },
   typeSheet: {
     margin: 24,
