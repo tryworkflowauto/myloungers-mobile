@@ -6,7 +6,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
-  Dimensions,
   Modal,
   Platform,
   Pressable,
@@ -34,8 +33,6 @@ export type TesisRow = {
   lat?: number | null
   lon?: number | null
 }
-
-const SCREEN_W = Dimensions.get('window').width
 
 const WEEKDAY_LABELS_TR = ['P', 'P', 'S', 'Ç', 'P', 'C', 'C'] as const
 const WEEKDAY_LABELS_EN = ['M', 'T', 'W', 'T', 'F', 'S', 'S'] as const
@@ -67,6 +64,29 @@ function parseImkanlar(raw: unknown): string[] {
     try {
       const p = JSON.parse(raw) as unknown
       return parseImkanlar(p)
+    } catch {
+      return raw ? [raw] : []
+    }
+  }
+  return []
+}
+
+function parseImkanlarAll(raw: unknown): string[] {
+  if (raw == null) return []
+  if (Array.isArray(raw)) {
+    return raw
+      .map((x) => {
+        if (typeof x === 'string') return x
+        if (x && typeof x === 'object' && 'ad' in x) return String((x as { ad: string }).ad)
+        if (x && typeof x === 'object' && 'name' in x) return String((x as { name: string }).name)
+        return ''
+      })
+      .filter(Boolean)
+  }
+  if (typeof raw === 'string') {
+    try {
+      const p = JSON.parse(raw) as unknown
+      return parseImkanlarAll(p)
     } catch {
       return raw ? [raw] : []
     }
@@ -146,6 +166,14 @@ export default function SearchScreen() {
   const [mesafe, setMesafe] = useState<number>(10)
   const [gpsKonum, setGpsKonum] = useState<{ lat: number; lon: number } | null>(null)
 
+  const [showFilterModal, setShowFilterModal] = useState(false)
+  const [siralama, setSiralama] = useState<'populer' | 'ucuzdan' | 'pahalidan' | 'puan'>('populer')
+  const [minPuan, setMinPuan] = useState<number | null>(null)
+  const [secilenImkanlar, setSecilenImkanlar] = useState<string[]>([])
+  const [tumImkanlar, setTumImkanlar] = useState<string[]>([])
+  const [minFiyat, setMinFiyat] = useState<number>(0)
+  const [maxFiyat, setMaxFiyat] = useState<number>(5000)
+
   const locale = lang === 'tr' ? 'tr-TR' : 'en-US'
   const formatDate = useCallback(
     (d: Date) => d.toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' }),
@@ -224,6 +252,26 @@ export default function SearchScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- initial search from route params only
   }, [])
 
+  useEffect(() => {
+    let cancelled = false
+    void supabase
+      .from('tesisler')
+      .select('imkanlar')
+      .then(({ data, error }) => {
+        if (cancelled || error || !data) return
+        const uniq = new Set<string>()
+        for (const row of data) {
+          for (const im of parseImkanlarAll(row.imkanlar)) {
+            uniq.add(im)
+          }
+        }
+        setTumImkanlar(Array.from(uniq).sort((a, b) => a.localeCompare(b, 'tr')))
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   const openDatePickerModal = () => {
     const d = new Date(date)
     d.setHours(12, 0, 0, 0)
@@ -283,15 +331,55 @@ export default function SearchScreen() {
   }
 
   const filteredResults = useMemo(() => {
-    if (filterTab === 'all') return searchResults
-    if (filterTab === 'beach') {
-      return searchResults.filter((r) => getKategori(r).some((k) => k.toUpperCase().includes('BEACH')))
+    let list: TesisRow[]
+    if (filterTab === 'all') list = [...searchResults]
+    else if (filterTab === 'beach') {
+      list = searchResults.filter((r) => getKategori(r).some((k) => k.toUpperCase().includes('BEACH')))
+    } else if (filterTab === 'hotel') {
+      list = searchResults.filter((r) => getKategori(r).some((k) => k.toUpperCase().includes('HOTEL')))
+    } else {
+      list = searchResults.filter((r) => getKategori(r).some((k) => k.toUpperCase().includes('AQUA')))
     }
-    if (filterTab === 'hotel') {
-      return searchResults.filter((r) => getKategori(r).some((k) => k.toUpperCase().includes('HOTEL')))
+
+    if (minPuan != null) {
+      list = list.filter((r) => r.puan != null && Number(r.puan) >= minPuan)
     }
-    return searchResults.filter((r) => getKategori(r).some((k) => k.toUpperCase().includes('AQUA')))
-  }, [searchResults, filterTab])
+
+    if (secilenImkanlar.length > 0) {
+      list = list.filter((r) => {
+        const ims = parseImkanlarAll(r.imkanlar)
+        const set = new Set(ims)
+        return secilenImkanlar.every((req) => set.has(req))
+      })
+    }
+
+    const puanVal = (r: TesisRow) => {
+      if (r.puan == null) return NaN
+      const n = Number(r.puan)
+      return Number.isNaN(n) ? NaN : n
+    }
+
+    list.sort((a, b) => {
+      if (siralama === 'populer') return 0
+      const pa = puanVal(a)
+      const pb = puanVal(b)
+      if (siralama === 'ucuzdan') {
+        if (Number.isNaN(pa) && Number.isNaN(pb)) return 0
+        if (Number.isNaN(pa)) return 1
+        if (Number.isNaN(pb)) return -1
+        return pa - pb
+      }
+      if (siralama === 'pahalidan' || siralama === 'puan') {
+        if (Number.isNaN(pa) && Number.isNaN(pb)) return 0
+        if (Number.isNaN(pa)) return 1
+        if (Number.isNaN(pb)) return -1
+        return pb - pa
+      }
+      return 0
+    })
+
+    return list
+  }, [searchResults, filterTab, siralama, minPuan, secilenImkanlar])
 
   const onUseGps = async () => {
     setGpsLoading(true)
@@ -505,6 +593,120 @@ export default function SearchScreen() {
         </View>
       </Modal>
 
+      <Modal visible={showFilterModal} animationType="slide" transparent>
+        <View style={styles.regionModalRoot}>
+          <SafeAreaView style={styles.regionModalSafe} edges={['top', 'bottom']}>
+            <View style={styles.regionModalHeader}>
+              <Text style={[styles.regionModalTitle, { flex: 1 }]}>Filtrele</Text>
+              <TouchableOpacity onPress={() => setShowFilterModal(false)} hitSlop={12} accessibilityRole="button">
+                <Ionicons name="close" size={24} color="#0A1628" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.filterModalScrollContent}
+            >
+              <Text style={styles.filterSectionLabel}>SIRALAMA</Text>
+              <View style={styles.filterSortGrid}>
+                {(
+                  [
+                    { key: 'populer' as const, label: '⭐ Popüler' },
+                    { key: 'ucuzdan' as const, label: '💰 Ucuzdan Pahalıya' },
+                    { key: 'pahalidan' as const, label: '💎 Pahalıdan Ucuza' },
+                    { key: 'puan' as const, label: '🏆 En Yüksek Puan' },
+                  ] as const
+                ).map((opt) => {
+                  const active = siralama === opt.key
+                  return (
+                    <View key={opt.key} style={styles.filterSortCell}>
+                      <TouchableOpacity
+                        style={[styles.filterSortBtn, active && styles.filterSortBtnActive]}
+                        onPress={() => setSiralama(opt.key)}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={[styles.filterSortBtnText, active && styles.filterSortBtnTextActive]} numberOfLines={2}>
+                          {opt.label}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  )
+                })}
+              </View>
+
+              <Text style={styles.filterSectionLabel}>MİNİMUM PUAN</Text>
+              <View style={styles.filterPuanRow}>
+                {(
+                  [
+                    { value: null as number | null, label: 'Tümü' },
+                    { value: 3 as number | null, label: '3★+' },
+                    { value: 4 as number | null, label: '4★+' },
+                    { value: 4.5 as number | null, label: '4.5★+' },
+                  ] as const
+                ).map((opt) => {
+                  const active = minPuan === opt.value
+                  return (
+                    <TouchableOpacity
+                      key={String(opt.value)}
+                      style={[styles.filterPuanPill, active && styles.filterPuanPillActive]}
+                      onPress={() => setMinPuan(opt.value)}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={[styles.filterPuanPillText, active && styles.filterPuanPillTextActive]}>{opt.label}</Text>
+                    </TouchableOpacity>
+                  )
+                })}
+              </View>
+
+              <Text style={styles.filterSectionLabel}>ÖZELLİKLER</Text>
+              <View style={styles.filterImkanWrap}>
+                {tumImkanlar.map((im) => {
+                  const active = secilenImkanlar.includes(im)
+                  return (
+                    <TouchableOpacity
+                      key={im}
+                      style={[styles.filterImkanPill, active && styles.filterImkanPillActive]}
+                      onPress={() => {
+                        setSecilenImkanlar((prev) =>
+                          prev.includes(im) ? prev.filter((x) => x !== im) : [...prev, im],
+                        )
+                      }}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={[styles.filterImkanPillText, active && styles.filterImkanPillTextActive]} numberOfLines={2}>
+                        {im}
+                      </Text>
+                    </TouchableOpacity>
+                  )
+                })}
+              </View>
+            </ScrollView>
+            <View style={styles.filterModalFooter}>
+              <TouchableOpacity
+                style={styles.filterClearBtn}
+                onPress={() => {
+                  setSiralama('populer')
+                  setMinPuan(null)
+                  setSecilenImkanlar([])
+                  setMinFiyat(0)
+                  setMaxFiyat(5000)
+                }}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.filterClearBtnText}>Temizle</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.filterApplyBtn}
+                onPress={() => setShowFilterModal(false)}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.filterApplyBtnText}>Sonuçları Gör</Text>
+              </TouchableOpacity>
+            </View>
+          </SafeAreaView>
+        </View>
+      </Modal>
+
       <View style={styles.headerRow}>
         <TouchableOpacity onPress={() => router.back()} hitSlop={12} accessibilityRole="button">
           <Ionicons name="arrow-back" size={24} color="#ffffff" />
@@ -627,6 +829,10 @@ export default function SearchScreen() {
 
         <TouchableOpacity style={styles.searchOrangeBtn} onPress={() => void runSearch()} activeOpacity={0.9} disabled={loading}>
           <Text style={styles.searchOrangeBtnText}>{lang === 'tr' ? 'Ara' : 'Search'}</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.filterOpenBtn} onPress={() => setShowFilterModal(true)} activeOpacity={0.85}>
+          <Text style={styles.filterOpenBtnText}>Filtrele</Text>
         </TouchableOpacity>
 
         <View style={styles.tabsRow}>
@@ -981,4 +1187,91 @@ const styles = StyleSheet.create({
     backgroundColor: '#0ABAB5',
   },
   calendarBtnOkText: { fontSize: 12, fontWeight: '700', color: '#fff' },
+  filterOpenBtn: {
+    borderWidth: 1,
+    borderColor: '#1a56db',
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginBottom: 8,
+    backgroundColor: '#fff',
+  },
+  filterOpenBtnText: { color: '#1a56db', fontWeight: '700', fontSize: 14 },
+  filterModalScrollContent: { paddingHorizontal: 16, paddingBottom: 16 },
+  filterSectionLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    color: '#0A1628',
+    opacity: 0.7,
+    marginBottom: 8,
+    marginTop: 12,
+  },
+  filterSortGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 8 },
+  filterSortCell: { width: '48%', marginBottom: 4 },
+  filterSortBtn: {
+    borderWidth: 1,
+    borderColor: '#1a56db',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
+    backgroundColor: '#fff',
+  },
+  filterSortBtnActive: { backgroundColor: '#1a56db', borderColor: '#1a56db' },
+  filterSortBtnText: { fontSize: 11, fontWeight: '600', color: '#1a56db', textAlign: 'center' },
+  filterSortBtnTextActive: { color: '#fff' },
+  filterPuanRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  filterPuanPill: {
+    borderWidth: 1,
+    borderColor: '#1a56db',
+    borderRadius: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    backgroundColor: '#fff',
+  },
+  filterPuanPillActive: { backgroundColor: '#1a56db', borderColor: '#1a56db' },
+  filterPuanPillText: { fontSize: 13, fontWeight: '600', color: '#1a56db' },
+  filterPuanPillTextActive: { color: '#fff' },
+  filterImkanWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  filterImkanPill: {
+    borderWidth: 1,
+    borderColor: '#1a56db',
+    borderRadius: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#fff',
+    maxWidth: '100%',
+  },
+  filterImkanPillActive: { backgroundColor: '#1a56db', borderColor: '#1a56db' },
+  filterImkanPillText: { fontSize: 12, fontWeight: '600', color: '#1a56db' },
+  filterImkanPillTextActive: { color: '#fff' },
+  filterModalFooter: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+  },
+  filterClearBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    backgroundColor: '#e2e8f0',
+  },
+  filterClearBtnText: { fontSize: 14, fontWeight: '700', color: '#64748b' },
+  filterApplyBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    backgroundColor: '#1a56db',
+  },
+  filterApplyBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' },
 })

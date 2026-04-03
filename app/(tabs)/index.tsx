@@ -1,4 +1,6 @@
+import Slider from '@react-native-community/slider'
 import { Ionicons } from '@expo/vector-icons'
+import * as Location from 'expo-location'
 import { Image } from 'expo-image'
 import { useRouter } from 'expo-router'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -13,7 +15,6 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -108,6 +109,29 @@ function parseImkanlar(raw: unknown): string[] {
   return []
 }
 
+function parseImkanlarAll(raw: unknown): string[] {
+  if (raw == null) return []
+  if (Array.isArray(raw)) {
+    return raw
+      .map((x) => {
+        if (typeof x === 'string') return x
+        if (x && typeof x === 'object' && 'ad' in x) return String((x as { ad: string }).ad)
+        if (x && typeof x === 'object' && 'name' in x) return String((x as { name: string }).name)
+        return ''
+      })
+      .filter(Boolean)
+  }
+  if (typeof raw === 'string') {
+    try {
+      const p = JSON.parse(raw) as unknown
+      return parseImkanlarAll(p)
+    } catch {
+      return raw ? [raw] : []
+    }
+  }
+  return []
+}
+
 function firstTesisByTypeKeyword(rows: TesisRow[], type: 'hotel' | 'beach' | 'aqua'): TesisRow | undefined {
   return rows.find((r) => {
     const ad = r.ad.toLowerCase()
@@ -129,7 +153,13 @@ export default function HomeScreen() {
   const [facilityTypeKey, setFacilityTypeKey] = useState<string | null>(null)
   const [showTypeModal, setShowTypeModal] = useState(false)
   const [showFilterModal, setShowFilterModal] = useState(false)
-  const [minRating4, setMinRating4] = useState(false)
+  const [siralama, setSiralama] = useState<'populer' | 'ucuzdan' | 'pahalidan' | 'puan'>('populer')
+  const [minPuan, setMinPuan] = useState<number | null>(null)
+  const [secilenImkanlar, setSecilenImkanlar] = useState<string[]>([])
+  const [tumImkanlar, setTumImkanlar] = useState<string[]>([])
+  const [filterMesafe, setFilterMesafe] = useState(5)
+  const [maxFiyat, setMaxFiyat] = useState(5000)
+  const [filterGpsLoading, setFilterGpsLoading] = useState(false)
 
   const [showRegionModal, setShowRegionModal] = useState(false)
   const [regionStep, setRegionStep] = useState<'bolge' | 'il' | 'ilce'>('bolge')
@@ -202,6 +232,26 @@ export default function HomeScreen() {
   }, [])
 
   useEffect(() => {
+    let cancelled = false
+    void supabase
+      .from('tesisler')
+      .select('imkanlar')
+      .then(({ data, error }) => {
+        if (cancelled || error || !data) return
+        const uniq = new Set<string>()
+        for (const row of data) {
+          for (const im of parseImkanlarAll(row.imkanlar)) {
+            uniq.add(im)
+          }
+        }
+        setTumImkanlar(Array.from(uniq).sort((a, b) => a.localeCompare(b, 'tr')))
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
     if (bannerTimerRef.current) {
       clearInterval(bannerTimerRef.current)
       bannerTimerRef.current = null
@@ -262,7 +312,9 @@ export default function HomeScreen() {
       region.trim().length > 0 ||
       facilityName.trim().length > 0 ||
       facilityTypeKey != null ||
-      minRating4
+      minPuan != null ||
+      secilenImkanlar.length > 0 ||
+      siralama !== 'populer'
 
     if (!hasFilters) {
       setSearchMode(false)
@@ -290,8 +342,8 @@ export default function HomeScreen() {
       q = q.ilike('ad', `%${facilityName.trim()}%`)
     }
 
-    if (minRating4) {
-      q = q.gte('puan', 4)
+    if (minPuan != null) {
+      q = q.gte('puan', minPuan)
     }
 
     const { data, error } = await q.order('puan', { ascending: false })
@@ -306,9 +358,41 @@ export default function HomeScreen() {
     if (facilityTypeKey) {
       out = out.filter((row) => matchesFacilityType(row.ad, facilityTypeKey))
     }
+    if (secilenImkanlar.length > 0) {
+      out = out.filter((row) => {
+        const ims = parseImkanlarAll(row.imkanlar)
+        const set = new Set(ims)
+        return secilenImkanlar.every((req) => set.has(req))
+      })
+    }
+
+    const puanVal = (row: TesisRow) => {
+      if (row.puan == null) return NaN
+      const n = Number(row.puan)
+      return Number.isNaN(n) ? NaN : n
+    }
+    out = [...out].sort((a, b) => {
+      if (siralama === 'populer') return 0
+      const pa = puanVal(a)
+      const pb = puanVal(b)
+      if (siralama === 'ucuzdan') {
+        if (Number.isNaN(pa) && Number.isNaN(pb)) return 0
+        if (Number.isNaN(pa)) return 1
+        if (Number.isNaN(pb)) return -1
+        return pa - pb
+      }
+      if (siralama === 'pahalidan' || siralama === 'puan') {
+        if (Number.isNaN(pa) && Number.isNaN(pb)) return 0
+        if (Number.isNaN(pa)) return 1
+        if (Number.isNaN(pb)) return -1
+        return pb - pa
+      }
+      return 0
+    })
+
     setSearchResults(out)
     setSearchMode(true)
-  }, [region, facilityName, facilityTypeKey, minRating4])
+  }, [region, facilityName, facilityTypeKey, minPuan, secilenImkanlar, siralama])
 
   useEffect(() => {
     if (skipFacilityDropdownSearchRef.current) {
@@ -350,7 +434,29 @@ export default function HomeScreen() {
   }
 
   const onApplyFilterModal = () => {
+    void runSupabaseSearch()
     setShowFilterModal(false)
+  }
+
+  const onFilterModalUseGps = async () => {
+    setFilterGpsLoading(true)
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync()
+      if (status !== 'granted') return
+      const pos = await Location.getCurrentPositionAsync({})
+      const [rev] = await Location.reverseGeocodeAsync({
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+      })
+      if (rev) {
+        const district = rev.district ?? rev.subregion ?? ''
+        const city = rev.city ?? rev.region ?? ''
+        const parts = [district, city].filter(Boolean)
+        if (parts.length > 0) setRegion(parts.join(', '))
+      }
+    } finally {
+      setFilterGpsLoading(false)
+    }
   }
 
   const openDatePickerModal = () => {
@@ -599,19 +705,182 @@ export default function HomeScreen() {
         </Pressable>
       </Modal>
 
-      <Modal visible={showFilterModal} transparent animationType="slide">
-        <View style={styles.modalBackdrop}>
-          <TouchableOpacity style={styles.modalDismiss} onPress={() => setShowFilterModal(false)} activeOpacity={1} />
-          <View style={styles.filterSheet}>
-            <Text style={styles.filterSheetTitle}>{t.home.filterTitle}</Text>
-            <View style={styles.filterRow}>
-              <Text style={styles.filterLabel}>{t.home.filterMinRating}</Text>
-              <Switch value={minRating4} onValueChange={setMinRating4} trackColor={{ false: '#ccc', true: '#0ABAB5' }} thumbColor="#fff" />
+      <Modal visible={showFilterModal} animationType="slide" transparent>
+        <View style={styles.regionModalRoot}>
+          <SafeAreaView style={styles.regionModalSafe} edges={['top', 'bottom']}>
+            <View style={styles.regionModalHeader}>
+              <Text style={[styles.regionModalTitle, { flex: 1 }]}>Filtrele</Text>
+              <TouchableOpacity onPress={() => setShowFilterModal(false)} hitSlop={12} accessibilityRole="button">
+                <Ionicons name="close" size={24} color="#0A1628" />
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity style={styles.filterApplyBtn} onPress={onApplyFilterModal}>
-              <Text style={styles.filterApplyText}>{t.home.filterApply}</Text>
-            </TouchableOpacity>
-          </View>
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.filterIdxScrollContent}
+            >
+              <View style={styles.filterIdxAramaHeaderRow}>
+                <Text style={[styles.filterIdxSectionLabel, styles.filterIdxSectionLabelFirst]}>ARAMA YARIŞAPI</Text>
+                <Text style={styles.filterIdxKmTeal}>{filterMesafe} km</Text>
+              </View>
+              <Slider
+                minimumValue={1}
+                maximumValue={50}
+                step={1}
+                value={filterMesafe}
+                onValueChange={(val) => setFilterMesafe(Math.round(val))}
+                minimumTrackTintColor="#0ABAB5"
+                maximumTrackTintColor="#e2e8f0"
+                thumbTintColor="#0ABAB5"
+              />
+              <View style={styles.filterIdxMesafePillsRow}>
+                {([1, 5, 10, 50] as const).map((km) => {
+                  const active = filterMesafe === km
+                  return (
+                    <TouchableOpacity
+                      key={km}
+                      style={[styles.filterIdxMesafePill, active && styles.filterIdxMesafePillActive]}
+                      onPress={() => setFilterMesafe(km)}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={[styles.filterIdxMesafePillText, active && styles.filterIdxMesafePillTextActive]}>{km} km</Text>
+                    </TouchableOpacity>
+                  )
+                })}
+              </View>
+              <TouchableOpacity
+                style={styles.filterIdxGpsBtn}
+                onPress={() => void onFilterModalUseGps()}
+                disabled={filterGpsLoading}
+                activeOpacity={0.85}
+              >
+                {filterGpsLoading ? (
+                  <ActivityIndicator size="small" color="#0ABAB5" />
+                ) : (
+                  <Text style={styles.filterIdxGpsBtnText}>
+                    📍 Konumumu Kullan — {filterMesafe} km çevresinde ara
+                  </Text>
+                )}
+              </TouchableOpacity>
+
+              <Text style={styles.filterIdxSectionLabel}>GÜNLÜK FİYAT ARALIĞI</Text>
+              <View style={styles.filterIdxPriceRow}>
+                <View style={styles.filterIdxPriceBox}>
+                  <Text style={styles.filterIdxPriceBoxLabel}>MIN</Text>
+                  <Text style={styles.filterIdxPriceBoxValue}>₺0</Text>
+                </View>
+                <Text style={styles.filterIdxPriceDash}>—</Text>
+                <View style={styles.filterIdxPriceBox}>
+                  <Text style={styles.filterIdxPriceBoxLabel}>MAX</Text>
+                  <Text style={styles.filterIdxPriceBoxValue}>
+                    {maxFiyat >= 5000 ? '₺5000+' : `₺${maxFiyat}`}
+                  </Text>
+                </View>
+              </View>
+              <Slider
+                minimumValue={0}
+                maximumValue={5000}
+                step={100}
+                value={maxFiyat}
+                onValueChange={setMaxFiyat}
+                minimumTrackTintColor="#0ABAB5"
+                maximumTrackTintColor="#e2e8f0"
+                thumbTintColor="#0ABAB5"
+              />
+
+              <Text style={styles.filterIdxSectionLabel}>SIRALAMA</Text>
+              <View style={styles.filterIdxSortGrid}>
+                {(
+                  [
+                    { key: 'populer' as const, label: '⭐ Popüler' },
+                    { key: 'ucuzdan' as const, label: '💰 Ucuzdan Pahalıya' },
+                    { key: 'pahalidan' as const, label: '💎 Pahalıdan Ucuza' },
+                    { key: 'puan' as const, label: '🏆 En Yüksek Puan' },
+                  ] as const
+                ).map((opt) => {
+                  const active = siralama === opt.key
+                  return (
+                    <View key={opt.key} style={styles.filterIdxSortCell}>
+                      <TouchableOpacity
+                        style={[styles.filterIdxSortBtn, active && styles.filterIdxSortBtnActive]}
+                        onPress={() => setSiralama(opt.key)}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={[styles.filterIdxSortBtnText, active && styles.filterIdxSortBtnTextActive]} numberOfLines={2}>
+                          {opt.label}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  )
+                })}
+              </View>
+
+              <Text style={styles.filterIdxSectionLabel}>MİNİMUM PUAN</Text>
+              <View style={styles.filterIdxPuanRow}>
+                {(
+                  [
+                    { value: null as number | null, label: 'Tümü' },
+                    { value: 3 as number | null, label: '3★+' },
+                    { value: 4 as number | null, label: '4★+' },
+                    { value: 4.5 as number | null, label: '4.5★+' },
+                  ] as const
+                ).map((opt) => {
+                  const active = minPuan === opt.value
+                  return (
+                    <TouchableOpacity
+                      key={String(opt.value)}
+                      style={[styles.filterIdxPuanPill, active && styles.filterIdxPuanPillActive]}
+                      onPress={() => setMinPuan(opt.value)}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={[styles.filterIdxPuanPillText, active && styles.filterIdxPuanPillTextActive]}>{opt.label}</Text>
+                    </TouchableOpacity>
+                  )
+                })}
+              </View>
+
+              <Text style={styles.filterIdxSectionLabel}>ÖZELLİKLER</Text>
+              <View style={styles.filterIdxImkanWrap}>
+                {tumImkanlar.map((im) => {
+                  const active = secilenImkanlar.includes(im)
+                  return (
+                    <TouchableOpacity
+                      key={im}
+                      style={[styles.filterIdxImkanPill, active && styles.filterIdxImkanPillActive]}
+                      onPress={() => {
+                        setSecilenImkanlar((prev) =>
+                          prev.includes(im) ? prev.filter((x) => x !== im) : [...prev, im],
+                        )
+                      }}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={[styles.filterIdxImkanPillText, active && styles.filterIdxImkanPillTextActive]} numberOfLines={2}>
+                        {im}
+                      </Text>
+                    </TouchableOpacity>
+                  )
+                })}
+              </View>
+            </ScrollView>
+            <View style={styles.filterIdxFooter}>
+              <TouchableOpacity
+                style={styles.filterIdxClearBtn}
+                onPress={() => {
+                  setSiralama('populer')
+                  setMinPuan(null)
+                  setSecilenImkanlar([])
+                  setFilterMesafe(5)
+                  setMaxFiyat(5000)
+                }}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.filterIdxClearBtnText}>Temizle</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.filterIdxApplyBtn} onPress={onApplyFilterModal} activeOpacity={0.85}>
+                <Text style={styles.filterIdxApplyBtnText}>Sonuçları Gör</Text>
+              </TouchableOpacity>
+            </View>
+          </SafeAreaView>
         </View>
       </Modal>
 
@@ -1213,6 +1482,138 @@ const styles = StyleSheet.create({
   filterLabel: { flex: 1, fontSize: 15, color: '#0A1628', fontWeight: '600' },
   filterApplyBtn: { backgroundColor: '#0ABAB5', borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
   filterApplyText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  filterIdxScrollContent: { paddingHorizontal: 16, paddingBottom: 16 },
+  filterIdxAramaHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  filterIdxKmTeal: { fontSize: 14, fontWeight: '700', color: '#0ABAB5' },
+  filterIdxSectionLabelFirst: { marginTop: 0 },
+  filterIdxMesafePillsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+  filterIdxMesafePill: {
+    flex: 1,
+    minWidth: '20%',
+    borderWidth: 1,
+    borderColor: '#0ABAB5',
+    borderRadius: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    backgroundColor: '#fff',
+  },
+  filterIdxMesafePillActive: { backgroundColor: '#0ABAB5', borderColor: '#0ABAB5' },
+  filterIdxMesafePillText: { fontSize: 12, fontWeight: '600', color: '#0ABAB5' },
+  filterIdxMesafePillTextActive: { color: '#fff' },
+  filterIdxGpsBtn: {
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: '#0ABAB5',
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterIdxGpsBtnText: { fontSize: 13, fontWeight: '600', color: '#0ABAB5', textAlign: 'center' },
+  filterIdxPriceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    marginBottom: 10,
+  },
+  filterIdxPriceBox: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+  },
+  filterIdxPriceBoxLabel: { fontSize: 10, fontWeight: '700', color: '#64748b', marginBottom: 4 },
+  filterIdxPriceBoxValue: { fontSize: 15, fontWeight: '800', color: '#0A1628' },
+  filterIdxPriceDash: { fontSize: 16, color: '#94a3b8', fontWeight: '600' },
+  filterIdxSectionLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    color: '#0A1628',
+    opacity: 0.7,
+    marginBottom: 8,
+    marginTop: 12,
+  },
+  filterIdxSortGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 8 },
+  filterIdxSortCell: { width: '48%', marginBottom: 4 },
+  filterIdxSortBtn: {
+    borderWidth: 1,
+    borderColor: '#0ABAB5',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
+    backgroundColor: '#fff',
+  },
+  filterIdxSortBtnActive: { backgroundColor: '#0ABAB5', borderColor: '#0ABAB5' },
+  filterIdxSortBtnText: { fontSize: 11, fontWeight: '600', color: '#0ABAB5', textAlign: 'center' },
+  filterIdxSortBtnTextActive: { color: '#fff' },
+  filterIdxPuanRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  filterIdxPuanPill: {
+    borderWidth: 1,
+    borderColor: '#0ABAB5',
+    borderRadius: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    backgroundColor: '#fff',
+  },
+  filterIdxPuanPillActive: { backgroundColor: '#0ABAB5', borderColor: '#0ABAB5' },
+  filterIdxPuanPillText: { fontSize: 13, fontWeight: '600', color: '#0ABAB5' },
+  filterIdxPuanPillTextActive: { color: '#fff' },
+  filterIdxImkanWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  filterIdxImkanPill: {
+    borderWidth: 1,
+    borderColor: '#0ABAB5',
+    borderRadius: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#fff',
+    maxWidth: '100%',
+  },
+  filterIdxImkanPillActive: { backgroundColor: '#0ABAB5', borderColor: '#0ABAB5' },
+  filterIdxImkanPillText: { fontSize: 12, fontWeight: '600', color: '#0ABAB5' },
+  filterIdxImkanPillTextActive: { color: '#fff' },
+  filterIdxFooter: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+  },
+  filterIdxClearBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#94a3b8',
+    backgroundColor: '#fff',
+  },
+  filterIdxClearBtnText: { fontSize: 14, fontWeight: '700', color: '#64748b' },
+  filterIdxApplyBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    backgroundColor: '#0ABAB5',
+  },
+  filterIdxApplyBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' },
   regionModalRoot: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   regionModalSafe: { maxHeight: '85%', backgroundColor: '#fff', borderTopLeftRadius: 16, borderTopRightRadius: 16 },
   regionModalHeader: {
