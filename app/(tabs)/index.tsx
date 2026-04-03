@@ -338,7 +338,15 @@ export default function HomeScreen() {
   }, [facilityName])
 
   const onSearchFacilities = () => {
-    void runSupabaseSearch()
+    router.push({
+      pathname: '/(tabs)/search',
+      params: {
+        region,
+        facilityTypeKey: facilityTypeKey ?? '',
+        date: date.toISOString(),
+        facilityName,
+      },
+    })
   }
 
   const onApplyFilterModal = () => {
@@ -779,7 +787,10 @@ export default function HomeScreen() {
               <TextInput
                 placeholder={t.home.facilityNamePlaceholder}
                 value={facilityName}
-                onChangeText={setFacilityName}
+                onChangeText={(text) => {
+                  setFacilityName(text)
+                  if (text.length === 0) setFacilityDropdownResults([])
+                }}
                 style={styles.fieldInput}
                 placeholderTextColor="#94a3b8"
               />

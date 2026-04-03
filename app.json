@@ -39,7 +39,13 @@
           }
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Konumunuzu tesis aramasında kullanmamıza izin verin."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
