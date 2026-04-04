@@ -1,10 +1,11 @@
 import { Ionicons } from '@expo/vector-icons'
 import { Image } from 'expo-image'
 import { useLocalSearchParams, useRouter } from 'expo-router'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
   Dimensions,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
@@ -16,6 +17,30 @@ import { supabase } from '../../lib/supabase'
 
 const SCREEN_W = Dimensions.get('window').width
 const GALLERY_MAIN_H = 240
+
+const WEEKDAY_LABELS_TR = ['P', 'P', 'S', 'Ç', 'P', 'C', 'C'] as const
+
+function sameCalendarDay(a: Date, b: Date) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+}
+
+type GrupRow = {
+  id: string
+  ad: string
+  renk: string
+  fiyat: number | null
+  fiyat_hafici: number | null
+  fiyat_hafta_sonu: number | null
+  sira: number | null
+  aciklama: string | null
+}
+
+type SezlongRow = {
+  id: string
+  numara: number
+  durum: string
+  grup_id: string
+}
 
 type TesisDetailRow = {
   id: string
@@ -119,6 +144,26 @@ export default function TesisDetailScreen() {
   const [galleryIndex, setGalleryIndex] = useState(0)
   const [fav, setFav] = useState(false)
   const [yorumSayisi, setYorumSayisi] = useState(0)
+  const [gruplar, setGruplar] = useState<GrupRow[]>([])
+  const [sezlonglar, setSezlonglar] = useState<SezlongRow[]>([])
+  const [rezerveIdsForDate, setRezeveIdsForDate] = useState<Set<string>>(new Set())
+  const [secilenSezlongIds, setSecilenSezlongIds] = useState<Set<string>>(new Set())
+  const [planTarih, setPlanTarih] = useState<Date>(() => {
+    const d = new Date()
+    d.setHours(12, 0, 0, 0)
+    return d
+  })
+  const [showPlanDatePicker, setShowPlanDatePicker] = useState(false)
+  const [planCalendarViewMonth, setPlanCalendarViewMonth] = useState(() => new Date())
+  const [planPendingDate, setPlanPendingDate] = useState(() => {
+    const d = new Date()
+    d.setHours(12, 0, 0, 0)
+    return d
+  })
+  const [acikHakkinda, setAcikHakkinda] = useState(true)
+  const [acikImkanlar, setAcikImkanlar] = useState(false)
+  const [acikSaatler, setAcikSaatler] = useState(false)
+  const [acikPlan, setAcikPlan] = useState(false)
 
   useEffect(() => {
     if (!slug) {
@@ -166,6 +211,88 @@ export default function TesisDetailScreen() {
     }
   }, [row?.id])
 
+  useEffect(() => {
+    if (!row?.id) return
+    void supabase
+      .from('sezlong_gruplari')
+      .select('id, ad, renk, fiyat, fiyat_hafici, fiyat_hafta_sonu, sira, aciklama')
+      .eq('tesis_id', row.id)
+      .order('sira')
+      .then(({ data }) => {
+        if (data) setGruplar(data as GrupRow[])
+      })
+    void supabase
+      .from('sezlonglar')
+      .select('id, numara, durum, grup_id')
+      .eq('tesis_id', row.id)
+      .then(({ data }) => {
+        if (data) setSezlonglar(data as SezlongRow[])
+      })
+  }, [row?.id])
+
+  useEffect(() => {
+    if (!row?.id) return
+    const tarihStr = planTarih.toISOString().split('T')[0]
+    void supabase
+      .from('rezervasyonlar')
+      .select('sezlong_id')
+      .eq('tesis_id', row.id)
+      .lte('baslangic_tarih', tarihStr)
+      .gte('bitis_tarih', tarihStr)
+      .in('durum', ['onaylandi', 'beklemede'])
+      .then(({ data }) => {
+        if (data) setRezeveIdsForDate(new Set(data.map((r: { sezlong_id: string }) => r.sezlong_id)))
+      })
+  }, [row?.id, planTarih])
+
+  const planCalendarRows = useMemo(() => {
+    const y = planCalendarViewMonth.getFullYear()
+    const m = planCalendarViewMonth.getMonth()
+    const first = new Date(y, m, 1)
+    const pad = (first.getDay() + 6) % 7
+    const daysInMonth = new Date(y, m + 1, 0).getDate()
+    const cells: (number | null)[] = []
+    for (let i = 0; i < pad; i++) cells.push(null)
+    for (let d = 1; d <= daysInMonth; d++) cells.push(d)
+    const rows: (number | null)[][] = []
+    for (let i = 0; i < cells.length; i += 7) {
+      rows.push(cells.slice(i, i + 7))
+    }
+    const last = rows[rows.length - 1]
+    if (last && last.length < 7) {
+      while (last.length < 7) last.push(null)
+    }
+    return rows
+  }, [planCalendarViewMonth])
+
+  const planMonthYearLabel = planCalendarViewMonth.toLocaleDateString('tr-TR', {
+    month: 'long',
+    year: 'numeric',
+  })
+
+  const openPlanDatePicker = () => {
+    const d = new Date(planTarih)
+    d.setHours(12, 0, 0, 0)
+    setPlanPendingDate(d)
+    setPlanCalendarViewMonth(new Date(d.getFullYear(), d.getMonth(), 1))
+    setShowPlanDatePicker(true)
+  }
+
+  const shiftPlanCalendarMonth = (delta: number) => {
+    setPlanCalendarViewMonth((vm) => {
+      const next = new Date(vm)
+      next.setMonth(next.getMonth() + delta)
+      return next
+    })
+  }
+
+  const onPlanCalendarConfirm = () => {
+    const d = new Date(planPendingDate)
+    d.setHours(12, 0, 0, 0)
+    setPlanTarih(d)
+    setShowPlanDatePicker(false)
+  }
+
   const photoUrls = row ? parsePhotoSrcs(row.fotograflar) : []
   const imkanList = row ? parseImkanlarWithEmoji(row.imkanlar) : []
   const calismaLines = row ? parseCalismaSaatleriLines(row.calisma_saatleri) : []
@@ -175,6 +302,7 @@ export default function TesisDetailScreen() {
 
   const gallerySafeIdx =
     photoUrls.length > 0 ? Math.min(galleryIndex, photoUrls.length - 1) : 0
+  const sezlongSize = Math.floor((SCREEN_W - 32 - 24) / 7)
 
   if (loading) {
     return (
@@ -306,81 +434,426 @@ export default function TesisDetailScreen() {
           </View>
 
           <View style={styles.card}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-              <Ionicons name="location-outline" size={18} color="#0ABAB5" />
-              <Text style={styles.sectionTitle}>Tesis Hakkında</Text>
-            </View>
-            {row.kisa_aciklama && String(row.kisa_aciklama).trim() ? (
-              <Text style={styles.bodyText}>{row.kisa_aciklama}</Text>
-            ) : null}
-            {row.detayli_aciklama && String(row.detayli_aciklama).trim() ? (
-              <Text
-                style={[
-                  styles.bodyText,
-                  row.kisa_aciklama && String(row.kisa_aciklama).trim() ? { marginTop: 8 } : null,
-                ]}
-              >
-                {row.detayli_aciklama}
-              </Text>
-            ) : null}
-            {!row.kisa_aciklama?.trim() &&
-            !row.detayli_aciklama?.trim() &&
-            row.aciklama &&
-            String(row.aciklama).trim() ? (
-              <Text style={styles.bodyText}>{row.aciklama}</Text>
-            ) : null}
-            {!row.kisa_aciklama?.trim() &&
-            !row.detayli_aciklama?.trim() &&
-            !row.aciklama?.trim() ? (
-              <Text style={styles.bodyText}>Henüz açıklama eklenmemiş.</Text>
-            ) : null}
+            <TouchableOpacity
+              onPress={() => setAcikHakkinda(!acikHakkinda)}
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+              activeOpacity={0.7}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                <View
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 18,
+                    backgroundColor: '#fff5f5',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Ionicons name="location-outline" size={18} color="#ef4444" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.sectionTitle}>Tesis Hakkında</Text>
+                  <Text style={{ fontSize: 11, color: '#94a3b8' }}>{row?.ad ?? ''}</Text>
+                </View>
+              </View>
+              <Ionicons name={acikHakkinda ? 'chevron-up' : 'chevron-down'} size={20} color="#94a3b8" />
+            </TouchableOpacity>
+            {acikHakkinda && (
+              <View style={{ marginTop: 12 }}>
+                {row.kisa_aciklama && String(row.kisa_aciklama).trim() ? (
+                  <Text style={styles.bodyText}>{row.kisa_aciklama}</Text>
+                ) : null}
+                {row.detayli_aciklama && String(row.detayli_aciklama).trim() ? (
+                  <Text
+                    style={[
+                      styles.bodyText,
+                      row.kisa_aciklama && String(row.kisa_aciklama).trim() ? { marginTop: 8 } : null,
+                    ]}
+                  >
+                    {row.detayli_aciklama}
+                  </Text>
+                ) : null}
+                {!row.kisa_aciklama?.trim() &&
+                !row.detayli_aciklama?.trim() &&
+                row.aciklama &&
+                String(row.aciklama).trim() ? (
+                  <Text style={styles.bodyText}>{row.aciklama}</Text>
+                ) : null}
+                {!row.kisa_aciklama?.trim() &&
+                !row.detayli_aciklama?.trim() &&
+                !row.aciklama?.trim() ? (
+                  <Text style={styles.bodyText}>Henüz açıklama eklenmemiş.</Text>
+                ) : null}
+              </View>
+            )}
           </View>
 
           {imkanList.length > 0 ? (
             <View style={styles.card}>
-              <View style={styles.sectionTitleRow}>
-                <Ionicons name="star-outline" size={18} color="#0ABAB5" />
-                <Text style={styles.sectionTitle}>Tesis İmkânları</Text>
-              </View>
-              <View style={styles.imkanGrid}>
-                {imkanList.map((item, i) => (
+              <TouchableOpacity
+                onPress={() => setAcikImkanlar(!acikImkanlar)}
+                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+                activeOpacity={0.7}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
                   <View
-                    key={i}
                     style={{
-                      width: '50%',
-                      flexDirection: 'row',
+                      width: 36,
+                      height: 36,
+                      borderRadius: 18,
+                      backgroundColor: '#fefce8',
                       alignItems: 'center',
-                      gap: 6,
-                      paddingVertical: 4,
+                      justifyContent: 'center',
                     }}
                   >
-                    <Text style={{ fontSize: 16 }}>{item.emoji}</Text>
-                    <Text style={{ fontSize: 12, color: '#334155', flex: 1 }} numberOfLines={2}>
-                      {item.name}
-                    </Text>
+                    <Ionicons name="star-outline" size={18} color="#eab308" />
                   </View>
-                ))}
-              </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.sectionTitle}>Tesis İmkânları</Text>
+                    <Text style={{ fontSize: 11, color: '#94a3b8' }}>Öne çıkan özellikler</Text>
+                  </View>
+                </View>
+                <Ionicons name={acikImkanlar ? 'chevron-up' : 'chevron-down'} size={20} color="#94a3b8" />
+              </TouchableOpacity>
+              {acikImkanlar && (
+                <View style={{ marginTop: 12 }}>
+                  <View style={styles.imkanGrid}>
+                    {imkanList.map((item, i) => (
+                      <View
+                        key={i}
+                        style={{
+                          width: '50%',
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 6,
+                          paddingVertical: 4,
+                        }}
+                      >
+                        <Text style={{ fontSize: 16 }}>{item.emoji}</Text>
+                        <Text style={{ fontSize: 12, color: '#334155', flex: 1 }} numberOfLines={2}>
+                          {item.name}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
             </View>
           ) : null}
 
           {calismaLines.length > 0 ? (
             <View style={styles.card}>
-              <View style={styles.sectionTitleRow}>
-                <Ionicons name="time-outline" size={18} color="#0ABAB5" />
-                <Text style={styles.sectionTitle}>Çalışma Saatleri</Text>
-              </View>
-              <View style={styles.calismaSaatGrid}>
-                {calismaLines.map((line, ci) => (
-                  <View key={`${ci}-${line}`} style={styles.calismaSaatCell}>
-                    <Text style={styles.calismaSaatCellText}>{line}</Text>
+              <TouchableOpacity
+                onPress={() => setAcikSaatler(!acikSaatler)}
+                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+                activeOpacity={0.7}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                  <View
+                    style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: 18,
+                      backgroundColor: '#fff7ed',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Ionicons name="time-outline" size={18} color="#f97316" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.sectionTitle}>Çalışma Saatleri</Text>
+                    <Text style={{ fontSize: 11, color: '#94a3b8' }}>Haftalık açılış & kapanış</Text>
+                  </View>
+                </View>
+                <Ionicons name={acikSaatler ? 'chevron-up' : 'chevron-down'} size={20} color="#94a3b8" />
+              </TouchableOpacity>
+              {acikSaatler && (
+                <View style={{ marginTop: 12 }}>
+                  <View style={styles.calismaSaatGrid}>
+                    {calismaLines.map((line, ci) => (
+                      <View key={`${ci}-${line}`} style={styles.calismaSaatCell}>
+                        <Text style={styles.calismaSaatCellText}>{line}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
+            </View>
+          ) : null}
+
+          {gruplar.length > 0 && (
+            <View style={styles.card}>
+              <TouchableOpacity
+                onPress={() => setAcikPlan(!acikPlan)}
+                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+                activeOpacity={0.7}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                  <View
+                    style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: 18,
+                      backgroundColor: '#f0fdfa',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Ionicons name="grid-outline" size={18} color="#0ABAB5" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.sectionTitle}>Tesis Yerleşim Planı</Text>
+                    <Text style={{ fontSize: 11, color: '#94a3b8' }}>Bölgeye tıklayarak şezlong seçin</Text>
+                  </View>
+                </View>
+                <Ionicons name={acikPlan ? 'chevron-up' : 'chevron-down'} size={20} color="#94a3b8" />
+              </TouchableOpacity>
+
+              {acikPlan && (
+                <View style={{ marginTop: 12 }}>
+              <TouchableOpacity
+                onPress={openPlanDatePicker}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 8,
+                  backgroundColor: '#f0fdfa',
+                  borderRadius: 10,
+                  padding: 10,
+                  marginBottom: 16,
+                }}
+              >
+                <Ionicons name="calendar-outline" size={16} color="#0ABAB5" />
+                <Text style={{ fontSize: 14, color: '#0ABAB5', fontWeight: '700' }}>
+                  {planTarih.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })}
+                </Text>
+                <Ionicons name="chevron-down" size={16} color="#0ABAB5" />
+              </TouchableOpacity>
+
+              <View
+                style={{
+                  flexDirection: 'row',
+                  gap: 10,
+                  marginBottom: 16,
+                  flexWrap: 'nowrap',
+                  justifyContent: 'space-between',
+                }}
+              >
+                {[
+                  { renk: '#22c55e', label: 'Boş' },
+                  { renk: '#f97316', label: 'Dolu' },
+                  { renk: '#3b82f6', label: 'Rezerve' },
+                  { renk: '#e2e8f0', label: 'Bakım' },
+                  { renk: '#0ABAB5', label: 'Seçimim' },
+                ].map((item) => (
+                  <View key={item.label} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <View style={{ width: 12, height: 12, borderRadius: 3, backgroundColor: item.renk }} />
+                    <Text style={{ fontSize: 10, color: '#64748b' }}>{item.label}</Text>
                   </View>
                 ))}
               </View>
+
+              {gruplar.map((grup) => {
+                const grupSezlonglar = sezlonglar.filter((s) => s.grup_id === grup.id).sort((a, b) => a.numara - b.numara)
+                if (grupSezlonglar.length === 0) return null
+                const fiyat = grup.fiyat ?? grup.fiyat_hafici
+                const toplamSezlong = grupSezlonglar.length
+                const doluSezlong = grupSezlonglar.filter(
+                  (s) => s.durum === 'dolu' || s.durum === 'rezerve' || rezerveIdsForDate.has(s.id),
+                ).length
+                const dolulukYuzde =
+                  toplamSezlong > 0 ? Math.round((doluSezlong / toplamSezlong) * 100) : 0
+                return (
+                  <View key={grup.id} style={{ marginBottom: 16 }}>
+                    <View
+                      style={{
+                        backgroundColor: grup.renk ?? '#0ABAB5',
+                        borderRadius: 10,
+                        paddingHorizontal: 10,
+                        paddingVertical: 6,
+                        marginBottom: 10,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                      }}
+                    >
+                      <View style={{ flex: 1, paddingRight: 8 }}>
+                        <Text style={{ fontSize: 13, fontWeight: '800', color: '#fff' }}>{grup.ad}</Text>
+                        {grup.aciklama ? (
+                          <Text style={{ fontSize: 10, color: '#fff', opacity: 0.8, marginTop: 2 }}>
+                            {grup.aciklama}
+                          </Text>
+                        ) : null}
+                      </View>
+                      <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                        {fiyat != null && (
+                          <Text style={{ fontSize: 12, color: '#fff', opacity: 0.9 }}>
+                            ₺{fiyat.toLocaleString('tr-TR')} / gün
+                          </Text>
+                        )}
+                        <View style={{ alignItems: 'flex-end' }}>
+                          <Text style={{ fontSize: 11, color: '#fff', fontWeight: '700' }}>
+                            {toplamSezlong} şezlong
+                          </Text>
+                          <Text style={{ fontSize: 10, color: '#fff', opacity: 0.85 }}>
+                            {dolulukYuzde}% Dolu
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>
+                      {grupSezlonglar.map((s) => {
+                        const secili = secilenSezlongIds.has(s.id)
+                        const isRezerve = rezerveIdsForDate.has(s.id) || s.durum === 'rezerve'
+                        const isDolu = s.durum === 'dolu'
+                        const isBakim = s.durum === 'bakim'
+                        const isKilitli = s.durum === 'kilitli'
+                        const bgColor = secili
+                          ? '#0ABAB5'
+                          : isRezerve
+                            ? '#3b82f6'
+                            : isDolu
+                              ? '#f97316'
+                              : isBakim
+                                ? '#fff'
+                                : isKilitli
+                                  ? '#fff'
+                                  : '#22c55e'
+                        const textColor = '#fff'
+                        const disabled = (isDolu || isRezerve || isBakim || isKilitli) && !secili
+                        return (
+                          <TouchableOpacity
+                            key={s.id}
+                            disabled={disabled}
+                            onPress={() => {
+                              setSecilenSezlongIds((prev) => {
+                                const next = new Set(prev)
+                                if (next.has(s.id)) next.delete(s.id)
+                                else next.add(s.id)
+                                return next
+                              })
+                            }}
+                            style={{
+                              width: sezlongSize,
+                              height: sezlongSize,
+                              borderRadius: sezlongSize / 2,
+                              backgroundColor: bgColor,
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              borderWidth: 0,
+                            }}
+                          >
+                            <Text style={{ fontSize: 10, fontWeight: '700', color: textColor }}>
+                              {grup.ad.charAt(0).toUpperCase()}
+                              {s.numara}
+                            </Text>
+                          </TouchableOpacity>
+                        )
+                      })}
+                    </View>
+                  </View>
+                )
+              })}
+
+              {secilenSezlongIds.size > 0 && (
+                <View style={{ backgroundColor: '#f0fdfa', borderRadius: 10, padding: 12, marginTop: 8 }}>
+                  <Text style={{ fontSize: 14, color: '#0ABAB5', fontWeight: '700', textAlign: 'center' }}>
+                    {secilenSezlongIds.size} şezlong seçildi
+                  </Text>
+                </View>
+              )}
+                </View>
+              )}
             </View>
-          ) : null}
+          )}
         </View>
       </ScrollView>
+
+      <Modal visible={showPlanDatePicker} animationType="slide" transparent>
+        <View style={styles.regionModalRoot}>
+          <SafeAreaView style={styles.regionModalSafe} edges={['bottom']}>
+            <View style={styles.calendarNavRow}>
+              <TouchableOpacity onPress={() => shiftPlanCalendarMonth(-1)} hitSlop={12} accessibilityRole="button">
+                <Text style={styles.calendarNavArrow}>{'<'}</Text>
+              </TouchableOpacity>
+              <Text style={styles.calendarMonthTitle}>{planMonthYearLabel}</Text>
+              <TouchableOpacity onPress={() => shiftPlanCalendarMonth(1)} hitSlop={12} accessibilityRole="button">
+                <Text style={styles.calendarNavArrow}>{'>'}</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.calendarWeekdayRow}>
+              {WEEKDAY_LABELS_TR.map((label, wi) => (
+                <Text key={wi} style={styles.calendarWeekdayCell}>
+                  {label}
+                </Text>
+              ))}
+            </View>
+            {planCalendarRows.map((calRow, ri) => (
+              <View key={`plan-row-${ri}`} style={styles.calendarGridRow}>
+                {calRow.map((dayNum, di) => {
+                  if (dayNum == null) {
+                    return <View key={`e-${ri}-${di}`} style={styles.calendarDayCell} />
+                  }
+                  const cy = planCalendarViewMonth.getFullYear()
+                  const cm = planCalendarViewMonth.getMonth()
+                  const cellMidnight = new Date(cy, cm, dayNum)
+                  cellMidnight.setHours(0, 0, 0, 0)
+                  const todayMidnight = new Date()
+                  todayMidnight.setHours(0, 0, 0, 0)
+                  const isPast = cellMidnight.getTime() < todayMidnight.getTime()
+                  const cellDate = new Date(cy, cm, dayNum)
+                  cellDate.setHours(12, 0, 0, 0)
+                  const isToday = sameCalendarDay(cellDate, new Date())
+                  const isSelected = sameCalendarDay(planPendingDate, cellDate)
+                  return (
+                    <TouchableOpacity
+                      key={`d-${ri}-${di}`}
+                      style={styles.calendarDayCell}
+                      disabled={isPast}
+                      activeOpacity={isPast ? 1 : 0.7}
+                      onPress={() => {
+                        const nd = new Date(cy, cm, dayNum)
+                        nd.setHours(12, 0, 0, 0)
+                        setPlanPendingDate(nd)
+                      }}
+                    >
+                      {isSelected ? (
+                        <View style={styles.calendarDaySelected}>
+                          <Text style={styles.calendarDaySelectedText}>{dayNum}</Text>
+                        </View>
+                      ) : (
+                        <Text
+                          style={[
+                            styles.calendarDayText,
+                            isPast && styles.calendarDayPast,
+                            isToday && !isPast && styles.calendarDayToday,
+                          ]}
+                        >
+                          {dayNum}
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  )
+                })}
+              </View>
+            ))}
+            <View style={styles.calendarFooterRow}>
+              <TouchableOpacity
+                style={styles.calendarBtnCancel}
+                onPress={() => setShowPlanDatePicker(false)}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.calendarBtnCancelText}>İPTAL</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.calendarBtnOk} onPress={onPlanCalendarConfirm} activeOpacity={0.85}>
+                <Text style={styles.calendarBtnOkText}>TAMAM</Text>
+              </TouchableOpacity>
+            </View>
+          </SafeAreaView>
+        </View>
+      </Modal>
 
       <View style={[styles.stickyBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
         <TouchableOpacity style={styles.reserveBtn} activeOpacity={0.9} onPress={() => {}}>
@@ -470,4 +943,67 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   reserveBtnText: { color: '#fff', fontWeight: '800', fontSize: 16 },
+  regionModalRoot: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  regionModalSafe: { maxHeight: '85%', backgroundColor: '#fff', borderTopLeftRadius: 16, borderTopRightRadius: 16 },
+  calendarNavRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  calendarNavArrow: { fontSize: 15, fontWeight: '700', color: '#0A1628', paddingHorizontal: 6 },
+  calendarMonthTitle: { fontSize: 13, fontWeight: '700', color: '#0A1628' },
+  calendarWeekdayRow: { flexDirection: 'row', paddingHorizontal: 12, paddingTop: 8, paddingBottom: 6 },
+  calendarWeekdayCell: { flex: 1, textAlign: 'center', fontSize: 9, fontWeight: '600', color: '#64748b' },
+  calendarGridRow: { flexDirection: 'row', paddingHorizontal: 12 },
+  calendarDayCell: {
+    flex: 1,
+    minWidth: 30,
+    minHeight: 30,
+    maxHeight: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  calendarDayText: { fontSize: 11, color: '#0A1628' },
+  calendarDayPast: { opacity: 0.3 },
+  calendarDayToday: { color: '#0ABAB5', fontWeight: '700' },
+  calendarDaySelected: {
+    width: 27,
+    height: 27,
+    borderRadius: 13.5,
+    backgroundColor: '#0ABAB5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  calendarDaySelectedText: { color: '#fff', fontWeight: '700', fontSize: 11 },
+  calendarFooterRow: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+  },
+  calendarBtnCancel: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    backgroundColor: '#f1f5f9',
+  },
+  calendarBtnCancelText: { fontSize: 12, fontWeight: '700', color: '#64748b' },
+  calendarBtnOk: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    backgroundColor: '#0ABAB5',
+  },
+  calendarBtnOkText: { fontSize: 12, fontWeight: '700', color: '#fff' },
 })
