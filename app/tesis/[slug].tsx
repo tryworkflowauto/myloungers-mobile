@@ -32,6 +32,28 @@ function formatMenuFiyat(fiyat: number | string): string {
   return n.toLocaleString('tr-TR', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
 }
 
+function yorumAvg(vals: (number | null | undefined)[]): number | null {
+  const nums = vals
+    .filter((v) => v != null && !Number.isNaN(Number(v)))
+    .map((v) => Number(v))
+  if (nums.length === 0) return null
+  return nums.reduce((a, b) => a + b, 0) / nums.length
+}
+
+function yorumStarFilledCount(puan: number | null | undefined): number {
+  if (puan == null || Number.isNaN(Number(puan))) return 0
+  const n = Number(puan)
+  if (n <= 5) return Math.min(5, Math.round(n))
+  return Math.min(5, Math.round(n / 2))
+}
+
+function yorumBarPct(avg: number | null): number {
+  if (avg == null || Number.isNaN(avg)) return 0
+  const n = Number(avg)
+  const denom = n <= 5 ? 5 : 10
+  return Math.min(100, Math.max(0, (n / denom) * 100))
+}
+
 type GrupRow = {
   id: string
   ad: string
@@ -67,6 +89,20 @@ type MenuUrunRow = {
   gorsel_url: string | null
   kategori_id: string
   aktif: boolean
+}
+
+type YorumRow = {
+  id: string
+  musteri_adi: string | null
+  puan: number | null
+  yorum: string | null
+  konum_puan: number | null
+  temizlik_puan: number | null
+  hizmet_puan: number | null
+  fiyat_puan: number | null
+  dogrulanmis: boolean | null
+  isletme_cevabi: string | null
+  created_at: string
 }
 
 type TesisDetailRow = {
@@ -276,6 +312,8 @@ export default function TesisDetailScreen() {
   const [menuKategoriler, setMenuKategoriler] = useState<MenuKategoriRow[]>([])
   const [menuUrunler, setMenuUrunler] = useState<MenuUrunRow[]>([])
   const [menuSeciliKategori, setMenuSeciliKategori] = useState<'all' | string>('all')
+  const [yorumlarList, setYorumlarList] = useState<YorumRow[]>([])
+  const [acikYorumlar, setAcikYorumlar] = useState(false)
   const [acikPlan, setAcikPlan] = useState(false)
 
   useEffect(() => {
@@ -385,6 +423,29 @@ export default function TesisDetailScreen() {
   }, [menuKategoriler, menuUrunler])
 
   useEffect(() => {
+    if (!row?.id) {
+      setYorumlarList([])
+      return
+    }
+    let cancelled = false
+    void supabase
+      .from('yorumlar')
+      .select(
+        'id, musteri_adi, puan, yorum, konum_puan, temizlik_puan, hizmet_puan, fiyat_puan, dogrulanmis, isletme_cevabi, created_at',
+      )
+      .eq('tesis_id', row.id)
+      .eq('durum', 'onaylı')
+      .order('created_at', { ascending: false })
+      .then(({ data }) => {
+        if (cancelled) return
+        setYorumlarList((data ?? []) as YorumRow[])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [row?.id])
+
+  useEffect(() => {
     if (!row?.id) return
     const tarihStr = planTarih.toISOString().split('T')[0]
     void supabase
@@ -479,6 +540,25 @@ export default function TesisDetailScreen() {
       .map((k) => ({ kategori: k, urunler: map.get(k.id) ?? [] }))
       .filter((g) => g.urunler.length > 0)
   }, [menuKategoriler, menuUrunler, menuSeciliKategori])
+  const yorumOzet = useMemo(() => {
+    const list = yorumlarList
+    if (list.length === 0) {
+      return {
+        genel: null as number | null,
+        konum: null as number | null,
+        temizlik: null as number | null,
+        hizmet: null as number | null,
+        fiyat: null as number | null,
+      }
+    }
+    return {
+      genel: yorumAvg(list.map((y) => y.puan)),
+      konum: yorumAvg(list.map((y) => y.konum_puan)),
+      temizlik: yorumAvg(list.map((y) => y.temizlik_puan)),
+      hizmet: yorumAvg(list.map((y) => y.hizmet_puan)),
+      fiyat: yorumAvg(list.map((y) => y.fiyat_puan)),
+    }
+  }, [yorumlarList])
   const konumText = row ? [row.sehir, row.ilce].filter(Boolean).join(', ') : ''
   const adresText = row?.adres ?? konumText
   const puanNum = row?.puan != null ? Number(row.puan) : NaN
@@ -1475,6 +1555,172 @@ export default function TesisDetailScreen() {
                         </View>
                       ))}
                     </View>
+                  </>
+                )}
+              </View>
+            )}
+          </View>
+
+          <View style={styles.card}>
+            <TouchableOpacity
+              onPress={() => setAcikYorumlar(!acikYorumlar)}
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+              activeOpacity={0.7}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                <View
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 18,
+                    backgroundColor: '#fffbeb',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Ionicons name="star-outline" size={18} color="#f59e0b" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.sectionTitle}>Kullanıcı Yorumları</Text>
+                  <Text style={{ fontSize: 11, color: '#94a3b8' }} numberOfLines={1}>
+                    {yorumlarList.length} değerlendirme
+                  </Text>
+                </View>
+              </View>
+              <Ionicons name={acikYorumlar ? 'chevron-up' : 'chevron-down'} size={20} color="#94a3b8" />
+            </TouchableOpacity>
+            {acikYorumlar && (
+              <View style={{ marginTop: 12 }}>
+                {yorumlarList.length === 0 ? (
+                  <Text style={{ fontSize: 14, color: '#64748b', textAlign: 'center' }}>Henüz yorum yok</Text>
+                ) : (
+                  <>
+                    <View style={{ marginBottom: 16 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                        <Text style={{ fontSize: 28, fontWeight: '800', color: '#0ABAB5' }}>
+                          {yorumOzet.genel != null ? yorumOzet.genel.toFixed(1) : '—'}
+                        </Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                          {[1, 2, 3, 4, 5].map((s) => (
+                            <Ionicons
+                              key={s}
+                              name="star"
+                              size={18}
+                              color={s <= yorumStarFilledCount(yorumOzet.genel) ? '#FBBF24' : '#e2e8f0'}
+                            />
+                          ))}
+                        </View>
+                      </View>
+                      <Text style={{ fontSize: 12, color: '#64748b', marginBottom: 12 }}>
+                        {yorumlarList.length} yorum
+                      </Text>
+                      {(
+                        [
+                          { label: 'Konum', v: yorumOzet.konum },
+                          { label: 'Temizlik', v: yorumOzet.temizlik },
+                          { label: 'Hizmet', v: yorumOzet.hizmet },
+                          { label: 'Fiyat/Değer', v: yorumOzet.fiyat },
+                        ] as const
+                      ).map((rowBar) => (
+                        <View key={rowBar.label} style={{ marginBottom: 8 }}>
+                          <View
+                            style={{
+                              flexDirection: 'row',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              marginBottom: 4,
+                            }}
+                          >
+                            <Text style={{ fontSize: 11, color: '#64748b', fontWeight: '600' }}>{rowBar.label}</Text>
+                            <Text style={{ fontSize: 11, color: '#0A1628', fontWeight: '700' }}>
+                              {rowBar.v != null ? rowBar.v.toFixed(1) : '—'}
+                            </Text>
+                          </View>
+                          <View style={{ height: 4, borderRadius: 2, backgroundColor: '#e2e8f0', overflow: 'hidden' }}>
+                            <View
+                              style={{
+                                height: 4,
+                                borderRadius: 2,
+                                width: `${yorumBarPct(rowBar.v)}%` as `${number}%`,
+                                backgroundColor: '#0d9488',
+                              }}
+                            />
+                          </View>
+                        </View>
+                      ))}
+                    </View>
+                    {yorumlarList.map((y, yi) => (
+                      <View
+                        key={y.id}
+                        style={{
+                          marginBottom: yi < yorumlarList.length - 1 ? 14 : 0,
+                          paddingBottom: yi < yorumlarList.length - 1 ? 14 : 0,
+                          borderBottomWidth: yi < yorumlarList.length - 1 ? StyleSheet.hairlineWidth : 0,
+                          borderBottomColor: '#e2e8f0',
+                        }}
+                      >
+                        <View
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            flexWrap: 'wrap',
+                            gap: 6,
+                            marginBottom: 6,
+                          }}
+                        >
+                          <Text style={{ fontSize: 14, fontWeight: '700', color: '#0A1628' }}>
+                            {y.musteri_adi ?? 'Anonim'}
+                          </Text>
+                          {y.dogrulanmis ? (
+                            <View
+                              style={{
+                                backgroundColor: '#dcfce7',
+                                paddingHorizontal: 6,
+                                paddingVertical: 2,
+                                borderRadius: 6,
+                              }}
+                            >
+                              <Text style={{ fontSize: 10, fontWeight: '700', color: '#15803d' }}>Doğrulanmış</Text>
+                            </View>
+                          ) : null}
+                          <Text style={{ fontSize: 11, color: '#94a3b8', marginLeft: 'auto' }}>
+                            {new Date(y.created_at).toLocaleDateString('tr-TR', {
+                              day: 'numeric',
+                              month: 'short',
+                              year: 'numeric',
+                            })}
+                          </Text>
+                        </View>
+                        <View style={{ flexDirection: 'row', marginBottom: 6 }}>
+                          {[1, 2, 3, 4, 5].map((s) => (
+                            <Ionicons
+                              key={s}
+                              name="star"
+                              size={14}
+                              color={s <= yorumStarFilledCount(y.puan) ? '#FBBF24' : '#e2e8f0'}
+                            />
+                          ))}
+                        </View>
+                        {y.yorum ? (
+                          <Text style={{ fontSize: 13, color: '#334155', lineHeight: 20 }}>{y.yorum}</Text>
+                        ) : null}
+                        {y.isletme_cevabi ? (
+                          <View
+                            style={{
+                              marginTop: 10,
+                              backgroundColor: '#f1f5f9',
+                              borderRadius: 8,
+                              padding: 10,
+                            }}
+                          >
+                            <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748b', marginBottom: 4 }}>
+                              İşletme Yanıtı:
+                            </Text>
+                            <Text style={{ fontSize: 12, color: '#475569' }}>{y.isletme_cevabi}</Text>
+                          </View>
+                        ) : null}
+                      </View>
+                    ))}
                   </>
                 )}
               </View>
