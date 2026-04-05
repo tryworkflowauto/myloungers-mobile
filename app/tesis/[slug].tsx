@@ -61,6 +61,8 @@ type TesisDetailRow = {
   adres: string | null
   video_url: string | null
   ulasim: unknown
+  kurallar: unknown
+  kampanya_notlari: unknown
   enlem: number | null
   boylam: number | null
 }
@@ -129,6 +131,28 @@ function parsePhotoSrcs(fotograflar: unknown): string[] {
     }
   }
   return out
+}
+
+function parseKuralKampanyaItems(raw: unknown): { text: string; emoji: string }[] {
+  if (raw == null) return []
+  const arr = Array.isArray(raw)
+    ? raw
+    : (() => {
+        try {
+          return JSON.parse(raw as string)
+        } catch {
+          return []
+        }
+      })()
+  if (!Array.isArray(arr)) return []
+  return arr
+    .filter((x): x is Record<string, unknown> => x != null && typeof x === 'object')
+    .map((obj) => {
+      const text = String(obj.text ?? '').trim()
+      const emoji = typeof obj.emoji === 'string' ? obj.emoji : ''
+      return { text, emoji }
+    })
+    .filter((x) => x.text)
 }
 
 type UlasimFields = {
@@ -223,6 +247,7 @@ export default function TesisDetailScreen() {
   const [acikSaatler, setAcikSaatler] = useState(false)
   const [acikVideo, setAcikVideo] = useState(false)
   const [acikUlasim, setAcikUlasim] = useState(false)
+  const [acikBilinmesi, setAcikBilinmesi] = useState(false)
   const [acikPlan, setAcikPlan] = useState(false)
 
   useEffect(() => {
@@ -235,7 +260,7 @@ export default function TesisDetailScreen() {
     void supabase
       .from('tesisler')
       .select(
-        'id, ad, slug, sehir, ilce, fotograflar, puan, kisa_aciklama, aciklama, detayli_aciklama, imkanlar, calisma_saatleri, adres, video_url, ulasim, enlem, boylam',
+        'id, ad, slug, sehir, ilce, fotograflar, puan, kisa_aciklama, aciklama, detayli_aciklama, imkanlar, calisma_saatleri, adres, video_url, ulasim, kurallar, kampanya_notlari, enlem, boylam',
       )
       .eq('slug', slug)
       .maybeSingle()
@@ -361,6 +386,12 @@ export default function TesisDetailScreen() {
     if (row?.ulasim == null) return null
     return parseUlasimFields(row.ulasim) ?? EMPTY_ULASIM
   }, [row?.ulasim])
+  const kurallarItems = useMemo(() => (row ? parseKuralKampanyaItems(row.kurallar) : []), [row?.kurallar])
+  const kampanyaItems = useMemo(
+    () => (row ? parseKuralKampanyaItems(row.kampanya_notlari) : []),
+    [row?.kampanya_notlari],
+  )
+  const bilinmesiGerekenlerVisible = kurallarItems.length > 0 || kampanyaItems.length > 0
   const konumText = row ? [row.sehir, row.ilce].filter(Boolean).join(', ') : ''
   const adresText = row?.adres ?? konumText
   const puanNum = row?.puan != null ? Number(row.puan) : NaN
@@ -1106,6 +1137,100 @@ export default function TesisDetailScreen() {
                       ) : null}
                     </View>
                   </View>
+                </View>
+              )}
+            </View>
+          ) : null}
+
+          {bilinmesiGerekenlerVisible ? (
+            <View style={styles.card}>
+              <TouchableOpacity
+                onPress={() => setAcikBilinmesi(!acikBilinmesi)}
+                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+                activeOpacity={0.7}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                  <View
+                    style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: 18,
+                      backgroundColor: '#fff7ed',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Ionicons name="information-circle-outline" size={18} color="#f97316" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.sectionTitle}>Bilinmesi Gerekenler</Text>
+                    <Text style={{ fontSize: 11, color: '#94a3b8' }}>Kurallar & Kampanyalar</Text>
+                  </View>
+                </View>
+                <Ionicons name={acikBilinmesi ? 'chevron-up' : 'chevron-down'} size={20} color="#94a3b8" />
+              </TouchableOpacity>
+              {acikBilinmesi && (
+                <View style={{ marginTop: 12 }}>
+                  {kurallarItems.length > 0 ? (
+                    <View style={{ marginBottom: kampanyaItems.length > 0 ? 14 : 0 }}>
+                      <Text
+                        style={{
+                          fontSize: 11,
+                          fontWeight: '800',
+                          color: '#dc2626',
+                          marginBottom: 8,
+                          letterSpacing: 0.6,
+                          textTransform: 'uppercase',
+                        }}
+                      >
+                        KURALLAR
+                      </Text>
+                      {kurallarItems.map((item, i) => (
+                        <View
+                          key={`kr-${i}-${item.text}`}
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'flex-start',
+                            gap: 8,
+                            marginBottom: i < kurallarItems.length - 1 ? 8 : 0,
+                          }}
+                        >
+                          {item.emoji ? <Text style={{ fontSize: 16 }}>{item.emoji}</Text> : null}
+                          <Text style={{ fontSize: 12, color: '#334155', flex: 1 }}>{item.text}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
+                  {kampanyaItems.length > 0 ? (
+                    <View>
+                      <Text
+                        style={{
+                          fontSize: 11,
+                          fontWeight: '800',
+                          color: '#f97316',
+                          marginBottom: 8,
+                          letterSpacing: 0.6,
+                          textTransform: 'uppercase',
+                        }}
+                      >
+                        KAMPANYALAR
+                      </Text>
+                      {kampanyaItems.map((item, i) => (
+                        <View
+                          key={`kp-${i}-${item.text}`}
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'flex-start',
+                            gap: 8,
+                            marginBottom: i < kampanyaItems.length - 1 ? 8 : 0,
+                          }}
+                        >
+                          {item.emoji ? <Text style={{ fontSize: 16 }}>{item.emoji}</Text> : null}
+                          <Text style={{ fontSize: 12, color: '#334155', flex: 1 }}>{item.text}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
                 </View>
               )}
             </View>
