@@ -366,13 +366,19 @@ export default function TesisDetailScreen() {
 
   useEffect(() => {
     if (!row?.id) return
+    console.log('tesis id:', row?.id)
     void supabase
       .from('sezlong_gruplari')
       .select('id, ad, renk, fiyat, fiyat_hafici, fiyat_hafta_sonu, sira, aciklama, deniz_sirasi')
       .eq('tesis_id', row.id)
-      .order('deniz_sirasi', { ascending: true })
+      .order('sira', { ascending: true })
       .then(({ data }) => {
-        if (data) setGruplar(data as GrupRow[])
+        console.log('sezlong_gruplari', data)
+        if (data) {
+          const gruplar = data as GrupRow[]
+          console.log('gruplar', gruplar)
+          setGruplar(gruplar)
+        }
       })
     void supabase
       .from('sezlonglar')
@@ -381,7 +387,7 @@ export default function TesisDetailScreen() {
       .then(({ data }) => {
         if (data) setSezlonglar(data as SezlongRow[])
       })
-  }, [row?.id])
+  }, [row])
 
   useEffect(() => {
     if (!row?.id) {
@@ -568,18 +574,6 @@ export default function TesisDetailScreen() {
   const gallerySafeIdx =
     photoUrls.length > 0 ? Math.min(galleryIndex, photoUrls.length - 1) : 0
   const sezlongSize = Math.floor((SCREEN_W - 32 - 24) / 7)
-  const gruplarDenizSirasinaGore = useMemo(
-    () =>
-      [...gruplar].sort((a, b) => {
-        const va = a.deniz_sirasi
-        const vb = b.deniz_sirasi
-        if (va == null && vb == null) return 0
-        if (va == null) return 1
-        if (vb == null) return -1
-        return va - vb
-      }),
-    [gruplar],
-  )
 
   if (loading) {
     return (
@@ -977,7 +971,7 @@ export default function TesisDetailScreen() {
                 </View>
               </View>
 
-              {gruplarDenizSirasinaGore.map((grup) => {
+              {gruplar.map((grup) => {
                 const grupSezlonglar = sezlonglar.filter((s) => s.grup_id === grup.id).sort((a, b) => a.numara - b.numara)
                 if (grupSezlonglar.length === 0) return null
                 const fiyat = grup.fiyat ?? grup.fiyat_hafici
