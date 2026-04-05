@@ -4,6 +4,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useEffect, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
+  Alert,
   Dimensions,
   Linking,
   Modal,
@@ -123,6 +124,7 @@ type TesisDetailRow = {
   ulasim: unknown
   kurallar: unknown
   kampanya_notlari: unknown
+  telefon: string | null
   enlem: number | null
   boylam: number | null
 }
@@ -326,7 +328,7 @@ export default function TesisDetailScreen() {
     void supabase
       .from('tesisler')
       .select(
-        'id, ad, slug, sehir, ilce, fotograflar, puan, kisa_aciklama, aciklama, detayli_aciklama, imkanlar, calisma_saatleri, adres, video_url, ulasim, kurallar, kampanya_notlari, enlem, boylam',
+        'id, ad, slug, sehir, ilce, fotograflar, puan, kisa_aciklama, aciklama, detayli_aciklama, imkanlar, calisma_saatleri, adres, video_url, ulasim, kurallar, kampanya_notlari, telefon, enlem, boylam',
       )
       .eq('slug', slug)
       .maybeSingle()
@@ -1814,9 +1816,40 @@ export default function TesisDetailScreen() {
       </Modal>
 
       <View style={[styles.stickyBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-        <TouchableOpacity style={styles.reserveBtn} activeOpacity={0.9} onPress={() => {}}>
-          <Text style={styles.reserveBtnText}>Rezervasyon Yap</Text>
-        </TouchableOpacity>
+        <View style={styles.stickyBarRow}>
+          <TouchableOpacity
+            style={styles.stickyBackBtn}
+            activeOpacity={0.9}
+            onPress={() => router.back()}
+            accessibilityRole="button"
+            accessibilityLabel="Geri Dön"
+          >
+            <Ionicons name="arrow-back-outline" size={18} color="#334155" />
+            <Text style={styles.stickyBackBtnText}>Geri Dön</Text>
+          </TouchableOpacity>
+          {row.telefon?.trim() ? (
+            <TouchableOpacity
+              style={styles.stickyCallBtn}
+              activeOpacity={0.9}
+              onPress={() => {
+                void Linking.openURL(`tel:${String(row.telefon).replace(/\s/g, '')}`)
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Tesisi Ara"
+            >
+              <Ionicons name="call-outline" size={18} color="#0d9488" />
+              <Text style={styles.stickyCallBtnText}>Tesisi Ara</Text>
+            </TouchableOpacity>
+          ) : null}
+          <TouchableOpacity
+            style={styles.stickyReserveBtn}
+            activeOpacity={0.9}
+            onPress={() => Alert.alert('Yakında', 'Ödeme sistemi yakında aktif olacak')}
+            accessibilityRole="button"
+          >
+            <Text style={styles.stickyReserveBtnText}>Rezervasyon Yap</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </SafeAreaView>
   )
@@ -1890,17 +1923,56 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: '#e2e8f0',
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingTop: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 10,
   },
-  reserveBtn: {
-    backgroundColor: '#0ABAB5',
-    borderRadius: 12,
-    paddingVertical: 14,
+  stickyBarRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  stickyBackBtn: {
+    flex: 1,
+    height: 48,
+    flexDirection: 'column',
     alignItems: 'center',
-    width: '100%',
+    justifyContent: 'center',
+    gap: 2,
+    backgroundColor: '#f1f5f9',
+    borderRadius: 24,
+    paddingHorizontal: 4,
   },
-  reserveBtnText: { color: '#fff', fontWeight: '800', fontSize: 16 },
+  stickyBackBtnText: { fontSize: 10, fontWeight: '600', color: '#334155' },
+  stickyCallBtn: {
+    flex: 1,
+    height: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    backgroundColor: '#fff',
+    borderWidth: 1.5,
+    borderColor: '#0d9488',
+    borderRadius: 24,
+    paddingHorizontal: 8,
+  },
+  stickyCallBtnText: { fontSize: 12, fontWeight: '700', color: '#0d9488' },
+  stickyReserveBtn: {
+    flex: 2,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0d9488',
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    shadowColor: '#0d9488',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 5,
+    elevation: 5,
+  },
+  stickyReserveBtnText: { color: '#fff', fontWeight: '800', fontSize: 14 },
   regionModalRoot: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   regionModalSafe: { maxHeight: '85%', backgroundColor: '#fff', borderTopLeftRadius: 16, borderTopRightRadius: 16 },
   calendarNavRow: {
