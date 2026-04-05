@@ -13,6 +13,7 @@ import {
   View,
 } from 'react-native'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
+import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg'
 import { supabase } from '../../lib/supabase'
 
 const SCREEN_W = Dimensions.get('window').width
@@ -33,6 +34,7 @@ type GrupRow = {
   fiyat_hafta_sonu: number | null
   sira: number | null
   aciklama: string | null
+  deniz_sirasi: number | null
 }
 
 type SezlongRow = {
@@ -215,9 +217,9 @@ export default function TesisDetailScreen() {
     if (!row?.id) return
     void supabase
       .from('sezlong_gruplari')
-      .select('id, ad, renk, fiyat, fiyat_hafici, fiyat_hafta_sonu, sira, aciklama')
+      .select('id, ad, renk, fiyat, fiyat_hafici, fiyat_hafta_sonu, sira, aciklama, deniz_sirasi')
       .eq('tesis_id', row.id)
-      .order('sira')
+      .order('deniz_sirasi', { ascending: true })
       .then(({ data }) => {
         if (data) setGruplar(data as GrupRow[])
       })
@@ -303,6 +305,18 @@ export default function TesisDetailScreen() {
   const gallerySafeIdx =
     photoUrls.length > 0 ? Math.min(galleryIndex, photoUrls.length - 1) : 0
   const sezlongSize = Math.floor((SCREEN_W - 32 - 24) / 7)
+  const gruplarDenizSirasinaGore = useMemo(
+    () =>
+      [...gruplar].sort((a, b) => {
+        const va = a.deniz_sirasi
+        const vb = b.deniz_sirasi
+        if (va == null && vb == null) return 0
+        if (va == null) return 1
+        if (vb == null) return -1
+        return va - vb
+      }),
+    [gruplar],
+  )
 
   if (loading) {
     return (
@@ -655,7 +669,52 @@ export default function TesisDetailScreen() {
                 ))}
               </View>
 
-              {gruplar.map((grup) => {
+              <View
+                style={{
+                  width: '100%',
+                  height: 44,
+                  borderRadius: 10,
+                  overflow: 'hidden',
+                  marginBottom: 12,
+                  position: 'relative',
+                }}
+              >
+                <Svg width="100%" height={44} viewBox="0 0 400 44" preserveAspectRatio="none">
+                  <Defs>
+                    <LinearGradient id="denizGradientTesisPlan" x1="0" y1="0" x2="0" y2="1">
+                      <Stop offset="0" stopColor="#7dd3fc" stopOpacity="1" />
+                      <Stop offset="0.45" stopColor="#0284c7" stopOpacity="1" />
+                      <Stop offset="1" stopColor="#0c4a6e" stopOpacity="1" />
+                    </LinearGradient>
+                  </Defs>
+                  <Rect width="400" height="44" fill="url(#denizGradientTesisPlan)" />
+                </Svg>
+                <View
+                  style={{
+                    position: 'absolute',
+                    left: 0,
+                    right: 0,
+                    top: 0,
+                    bottom: 0,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                  pointerEvents="none"
+                >
+                  <Text
+                    style={{
+                      color: '#fff',
+                      fontWeight: '800',
+                      fontSize: 12,
+                      letterSpacing: 5,
+                    }}
+                  >
+                    ~ D E N İ Z ~
+                  </Text>
+                </View>
+              </View>
+
+              {gruplarDenizSirasinaGore.map((grup) => {
                 const grupSezlonglar = sezlonglar.filter((s) => s.grup_id === grup.id).sort((a, b) => a.numara - b.numara)
                 if (grupSezlonglar.length === 0) return null
                 const fiyat = grup.fiyat ?? grup.fiyat_hafici
