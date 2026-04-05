@@ -60,6 +60,7 @@ type TesisDetailRow = {
   calisma_saatleri: unknown
   adres: string | null
   video_url: string | null
+  ulasim: unknown
   enlem: number | null
   boylam: number | null
 }
@@ -130,6 +131,60 @@ function parsePhotoSrcs(fotograflar: unknown): string[] {
   return out
 }
 
+type UlasimFields = {
+  hat: string
+  not: string
+  tel1: string
+  tel2: string
+  durak: string
+  merkeze: string
+  saatBas: string
+  saatBit: string
+  havalimani: string
+}
+
+const EMPTY_ULASIM: UlasimFields = {
+  hat: '',
+  not: '',
+  tel1: '',
+  tel2: '',
+  durak: '',
+  merkeze: '',
+  saatBas: '',
+  saatBit: '',
+  havalimani: '',
+}
+
+function parseUlasimFields(raw: unknown): UlasimFields | null {
+  if (raw == null) return null
+  let o: Record<string, unknown>
+  if (typeof raw === 'string') {
+    try {
+      const p = JSON.parse(raw) as unknown
+      if (!p || typeof p !== 'object') return null
+      o = p as Record<string, unknown>
+    } catch {
+      return null
+    }
+  } else if (typeof raw === 'object') {
+    o = raw as Record<string, unknown>
+  } else {
+    return null
+  }
+  const s = (k: string) => (typeof o[k] === 'string' ? String(o[k]).trim() : '')
+  return {
+    hat: s('hat'),
+    not: s('not'),
+    tel1: s('tel1'),
+    tel2: s('tel2'),
+    durak: s('durak'),
+    merkeze: s('merkeze'),
+    saatBas: s('saatBas'),
+    saatBit: s('saatBit'),
+    havalimani: s('havalimanı') || s('havalimani'),
+  }
+}
+
 function paramSlug(slug: string | string[] | undefined): string {
   if (typeof slug === 'string') return slug
   if (Array.isArray(slug) && slug[0]) return slug[0]
@@ -167,6 +222,7 @@ export default function TesisDetailScreen() {
   const [acikImkanlar, setAcikImkanlar] = useState(false)
   const [acikSaatler, setAcikSaatler] = useState(false)
   const [acikVideo, setAcikVideo] = useState(false)
+  const [acikUlasim, setAcikUlasim] = useState(false)
   const [acikPlan, setAcikPlan] = useState(false)
 
   useEffect(() => {
@@ -179,7 +235,7 @@ export default function TesisDetailScreen() {
     void supabase
       .from('tesisler')
       .select(
-        'id, ad, slug, sehir, ilce, fotograflar, puan, kisa_aciklama, aciklama, detayli_aciklama, imkanlar, calisma_saatleri, adres, video_url, enlem, boylam',
+        'id, ad, slug, sehir, ilce, fotograflar, puan, kisa_aciklama, aciklama, detayli_aciklama, imkanlar, calisma_saatleri, adres, video_url, ulasim, enlem, boylam',
       )
       .eq('slug', slug)
       .maybeSingle()
@@ -301,6 +357,10 @@ export default function TesisDetailScreen() {
   const imkanList = row ? parseImkanlarWithEmoji(row.imkanlar) : []
   const calismaLines = row ? parseCalismaSaatleriLines(row.calisma_saatleri) : []
   const tesisVideoUrlTrimmed = useMemo(() => row?.video_url?.trim() || null, [row?.video_url])
+  const ulasimFields = useMemo(() => {
+    if (row?.ulasim == null) return null
+    return parseUlasimFields(row.ulasim) ?? EMPTY_ULASIM
+  }, [row?.ulasim])
   const konumText = row ? [row.sehir, row.ilce].filter(Boolean).join(', ') : ''
   const adresText = row?.adres ?? konumText
   const puanNum = row?.puan != null ? Number(row.puan) : NaN
@@ -879,6 +939,175 @@ export default function TesisDetailScreen() {
                   </TouchableOpacity>
                 </View>
               ) : null}
+            </View>
+          ) : null}
+
+          {ulasimFields ? (
+            <View style={styles.card}>
+              <TouchableOpacity
+                onPress={() => setAcikUlasim(!acikUlasim)}
+                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+                activeOpacity={0.7}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                  <View
+                    style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: 18,
+                      backgroundColor: '#eff6ff',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Ionicons name="bus-outline" size={18} color="#2563eb" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.sectionTitle}>Ulaşım Rehberi</Text>
+                    <Text style={{ fontSize: 11, color: '#94a3b8' }}>Dolmuş & Taksi</Text>
+                  </View>
+                </View>
+                <Ionicons name={acikUlasim ? 'chevron-up' : 'chevron-down'} size={20} color="#94a3b8" />
+              </TouchableOpacity>
+              {acikUlasim && (
+                <View style={{ marginTop: 12 }}>
+                  <View style={{ flexDirection: 'row', gap: 10, alignItems: 'stretch' }}>
+                    <View
+                      style={{
+                        flex: 1,
+                        backgroundColor: '#f8fafc',
+                        borderRadius: 10,
+                        padding: 10,
+                        borderLeftWidth: 3,
+                        borderLeftColor: '#f59e0b',
+                      }}
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                        <View
+                          style={{
+                            width: 36,
+                            height: 36,
+                            borderRadius: 18,
+                            backgroundColor: '#eff6ff',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <Ionicons name="car-outline" size={18} color="#2563eb" />
+                        </View>
+                        <Text style={{ fontSize: 13, fontWeight: '800', color: '#0A1628', flex: 1 }}>Taksi</Text>
+                      </View>
+                      {ulasimFields.merkeze ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 10 }}>
+                          <Ionicons name="location-outline" size={16} color="#64748b" style={{ marginTop: 2 }} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ fontSize: 11, color: '#94a3b8', marginBottom: 2 }}>Merkeze Uzaklık</Text>
+                            <Text style={{ fontSize: 12, color: '#334155' }}>{ulasimFields.merkeze}</Text>
+                          </View>
+                        </View>
+                      ) : null}
+                      {ulasimFields.havalimani ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 10 }}>
+                          <Ionicons name="airplane-outline" size={16} color="#64748b" style={{ marginTop: 2 }} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ fontSize: 11, color: '#94a3b8', marginBottom: 2 }}>Havalimanına Uzaklık</Text>
+                            <Text style={{ fontSize: 12, color: '#334155' }}>{ulasimFields.havalimani}</Text>
+                          </View>
+                        </View>
+                      ) : null}
+                      {ulasimFields.tel1 ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 10 }}>
+                          <Ionicons name="call-outline" size={16} color="#64748b" style={{ marginTop: 2 }} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ fontSize: 11, color: '#94a3b8', marginBottom: 2 }}>Taksi Telefon</Text>
+                            <Text style={{ fontSize: 12, color: '#334155' }}>{ulasimFields.tel1}</Text>
+                          </View>
+                        </View>
+                      ) : null}
+                      <View
+                        style={{
+                          alignSelf: 'flex-start',
+                          backgroundColor: '#fffbeb',
+                          borderWidth: 1,
+                          borderColor: '#fde68a',
+                          borderRadius: 8,
+                          paddingHorizontal: 8,
+                          paddingVertical: 4,
+                          marginTop: 2,
+                        }}
+                      >
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: '#b45309' }}>7/24 hizmet</Text>
+                      </View>
+                    </View>
+                    <View
+                      style={{
+                        flex: 1,
+                        backgroundColor: '#f8fafc',
+                        borderRadius: 10,
+                        padding: 10,
+                        borderLeftWidth: 3,
+                        borderLeftColor: '#2563eb',
+                      }}
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                        <View
+                          style={{
+                            width: 36,
+                            height: 36,
+                            borderRadius: 18,
+                            backgroundColor: '#eff6ff',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <Ionicons name="bus-outline" size={18} color="#2563eb" />
+                        </View>
+                        <Text style={{ fontSize: 13, fontWeight: '800', color: '#0A1628', flex: 1 }}>Dolmuş</Text>
+                      </View>
+                      {ulasimFields.hat ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 10 }}>
+                          <Ionicons name="navigate-outline" size={16} color="#64748b" style={{ marginTop: 2 }} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ fontSize: 11, color: '#94a3b8', marginBottom: 2 }}>Hat / Güzergah</Text>
+                            <Text style={{ fontSize: 12, color: '#334155' }}>{ulasimFields.hat}</Text>
+                          </View>
+                        </View>
+                      ) : null}
+                      {ulasimFields.saatBas || ulasimFields.saatBit ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 10 }}>
+                          <Ionicons name="time-outline" size={16} color="#64748b" style={{ marginTop: 2 }} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ fontSize: 11, color: '#94a3b8', marginBottom: 2 }}>Sefer Saatleri</Text>
+                            <Text style={{ fontSize: 12, color: '#334155' }}>
+                              {ulasimFields.saatBas && ulasimFields.saatBit
+                                ? `${ulasimFields.saatBas} – ${ulasimFields.saatBit}`
+                                : ulasimFields.saatBas || ulasimFields.saatBit}
+                            </Text>
+                          </View>
+                        </View>
+                      ) : null}
+                      {ulasimFields.durak ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 10 }}>
+                          <Ionicons name="pin-outline" size={16} color="#64748b" style={{ marginTop: 2 }} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ fontSize: 11, color: '#94a3b8', marginBottom: 2 }}>İniş noktası</Text>
+                            <Text style={{ fontSize: 12, color: '#334155' }}>{ulasimFields.durak}</Text>
+                          </View>
+                        </View>
+                      ) : null}
+                      {ulasimFields.not ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
+                          <Ionicons name="pencil-outline" size={16} color="#64748b" style={{ marginTop: 2 }} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ fontSize: 11, color: '#94a3b8', marginBottom: 2 }}>Not</Text>
+                            <Text style={{ fontSize: 12, color: '#334155' }}>{ulasimFields.not}</Text>
+                          </View>
+                        </View>
+                      ) : null}
+                    </View>
+                  </View>
+                </View>
+              )}
             </View>
           ) : null}
         </View>
