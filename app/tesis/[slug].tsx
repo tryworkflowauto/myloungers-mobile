@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
   Dimensions,
+  Linking,
   Modal,
   ScrollView,
   StyleSheet,
@@ -165,6 +166,7 @@ export default function TesisDetailScreen() {
   const [acikHakkinda, setAcikHakkinda] = useState(true)
   const [acikImkanlar, setAcikImkanlar] = useState(false)
   const [acikSaatler, setAcikSaatler] = useState(false)
+  const [acikVideo, setAcikVideo] = useState(false)
   const [acikPlan, setAcikPlan] = useState(false)
 
   useEffect(() => {
@@ -298,6 +300,7 @@ export default function TesisDetailScreen() {
   const photoUrls = row ? parsePhotoSrcs(row.fotograflar) : []
   const imkanList = row ? parseImkanlarWithEmoji(row.imkanlar) : []
   const calismaLines = row ? parseCalismaSaatleriLines(row.calisma_saatleri) : []
+  const tesisVideoUrlTrimmed = useMemo(() => row?.video_url?.trim() || null, [row?.video_url])
   const konumText = row ? [row.sehir, row.ilce].filter(Boolean).join(', ') : ''
   const adresText = row?.adres ?? konumText
   const puanNum = row?.puan != null ? Number(row.puan) : NaN
@@ -827,6 +830,57 @@ export default function TesisDetailScreen() {
               )}
             </View>
           )}
+
+          {tesisVideoUrlTrimmed ? (
+            <View style={styles.card}>
+              <TouchableOpacity
+                onPress={() => setAcikVideo(!acikVideo)}
+                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+                activeOpacity={0.7}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                  <View
+                    style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: 18,
+                      backgroundColor: '#fef2f2',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Ionicons name="videocam-outline" size={18} color="#dc2626" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.sectionTitle}>Tesis Videosu</Text>
+                    <Text style={{ fontSize: 11, color: '#94a3b8' }}>Tanıtım videosunu izleyin</Text>
+                  </View>
+                </View>
+                <Ionicons name={acikVideo ? 'chevron-up' : 'chevron-down'} size={20} color="#94a3b8" />
+              </TouchableOpacity>
+              {acikVideo && row?.video_url ? (
+                <View style={{ marginTop: 12 }}>
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      void Linking.openURL(row.video_url)
+                    }}
+                    style={{
+                      width: '100%',
+                      aspectRatio: 16 / 9,
+                      borderRadius: 10,
+                      overflow: 'hidden',
+                      backgroundColor: '#000',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Ionicons name="play" size={56} color="#ffffff" />
+                  </TouchableOpacity>
+                </View>
+              ) : null}
+            </View>
+          ) : null}
         </View>
       </ScrollView>
 
