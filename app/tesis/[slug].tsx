@@ -26,6 +26,12 @@ function sameCalendarDay(a: Date, b: Date) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
 }
 
+function formatMenuFiyat(fiyat: number | string): string {
+  const n = typeof fiyat === 'number' ? fiyat : parseFloat(String(fiyat).replace(/\s/g, '').replace(',', '.'))
+  if (Number.isNaN(n)) return String(fiyat)
+  return n.toLocaleString('tr-TR', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+}
+
 type GrupRow = {
   id: string
   ad: string
@@ -43,6 +49,24 @@ type SezlongRow = {
   numara: number
   durum: string
   grup_id: string
+}
+
+type MenuKategoriRow = {
+  id: string
+  ad: string
+  icon: string | null
+  sira: number | null
+  tesis_id: string
+}
+
+type MenuUrunRow = {
+  id: string
+  ad: string
+  aciklama: string | null
+  fiyat: number | string
+  gorsel_url: string | null
+  kategori_id: string
+  aktif: boolean
 }
 
 type TesisDetailRow = {
@@ -248,6 +272,10 @@ export default function TesisDetailScreen() {
   const [acikVideo, setAcikVideo] = useState(false)
   const [acikUlasim, setAcikUlasim] = useState(false)
   const [acikBilinmesi, setAcikBilinmesi] = useState(false)
+  const [acikMenu, setAcikMenu] = useState(false)
+  const [menuKategoriler, setMenuKategoriler] = useState<MenuKategoriRow[]>([])
+  const [menuUrunler, setMenuUrunler] = useState<MenuUrunRow[]>([])
+  const [menuSeciliKategori, setMenuSeciliKategori] = useState<'all' | string>('all')
   const [acikPlan, setAcikPlan] = useState(false)
 
   useEffect(() => {
@@ -314,6 +342,47 @@ export default function TesisDetailScreen() {
         if (data) setSezlonglar(data as SezlongRow[])
       })
   }, [row?.id])
+
+  useEffect(() => {
+    if (!row?.id) {
+      setMenuKategoriler([])
+      setMenuUrunler([])
+      setMenuSeciliKategori('all')
+      return
+    }
+    let cancelled = false
+    setMenuSeciliKategori('all')
+    void (async () => {
+      const { data: cats } = await supabase
+        .from('menu_kategorileri')
+        .select('id, ad, icon, sira, tesis_id')
+        .eq('tesis_id', row.id)
+        .order('sira', { ascending: true })
+      if (cancelled) return
+      const kategoriRows = (cats ?? []) as MenuKategoriRow[]
+      setMenuKategoriler(kategoriRows)
+      const ids = kategoriRows.map((c) => c.id)
+      if (ids.length === 0) {
+        setMenuUrunler([])
+        return
+      }
+      const { data: urunler } = await supabase
+        .from('menu_urunleri')
+        .select('id, ad, aciklama, fiyat, gorsel_url, kategori_id, aktif')
+        .in('kategori_id', ids)
+        .eq('aktif', true)
+      if (cancelled) return
+      setMenuUrunler((urunler ?? []) as MenuUrunRow[])
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [row?.id])
+
+  useEffect(() => {
+    console.log('menuKategoriler', menuKategoriler)
+    console.log('menuUrunler', menuUrunler)
+  }, [menuKategoriler, menuUrunler])
 
   useEffect(() => {
     if (!row?.id) return
@@ -392,6 +461,24 @@ export default function TesisDetailScreen() {
     [row?.kampanya_notlari],
   )
   const bilinmesiGerekenlerVisible = kurallarItems.length > 0 || kampanyaItems.length > 0
+  const menuDisplayGroups = useMemo(() => {
+    if (menuUrunler.length === 0) return [] as { kategori: MenuKategoriRow; urunler: MenuUrunRow[] }[]
+    if (menuSeciliKategori !== 'all') {
+      const cat = menuKategoriler.find((c) => c.id === menuSeciliKategori)
+      if (!cat) return []
+      const urunler = menuUrunler.filter((u) => u.kategori_id === menuSeciliKategori)
+      return [{ kategori: cat, urunler }]
+    }
+    const map = new Map<string, MenuUrunRow[]>()
+    for (const u of menuUrunler) {
+      const list = map.get(u.kategori_id) ?? []
+      list.push(u)
+      map.set(u.kategori_id, list)
+    }
+    return menuKategoriler
+      .map((k) => ({ kategori: k, urunler: map.get(k.id) ?? [] }))
+      .filter((g) => g.urunler.length > 0)
+  }, [menuKategoriler, menuUrunler, menuSeciliKategori])
   const konumText = row ? [row.sehir, row.ilce].filter(Boolean).join(', ') : ''
   const adresText = row?.adres ?? konumText
   const puanNum = row?.puan != null ? Number(row.puan) : NaN
@@ -1235,6 +1322,164 @@ export default function TesisDetailScreen() {
               )}
             </View>
           ) : null}
+
+          <View style={styles.card}>
+            <TouchableOpacity
+              onPress={() => setAcikMenu(!acikMenu)}
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+              activeOpacity={0.7}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                <View
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 18,
+                    backgroundColor: '#f5f3ff',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Ionicons name="restaurant-outline" size={18} color="#7c3aed" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.sectionTitle}>Menü</Text>
+                  <Text style={{ fontSize: 11, color: '#94a3b8' }} numberOfLines={1}>
+                    {menuUrunler.length} ürün · {menuKategoriler.length} kategori
+                  </Text>
+                </View>
+              </View>
+              <Ionicons name={acikMenu ? 'chevron-up' : 'chevron-down'} size={20} color="#94a3b8" />
+            </TouchableOpacity>
+            {acikMenu && (
+              <View style={{ marginTop: 12 }}>
+                {menuUrunler.length === 0 ? (
+                  <Text style={{ fontSize: 14, color: '#64748b', textAlign: 'center' }}>Menü bulunamadı</Text>
+                ) : (
+                  <>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingBottom: 4 }}
+                      keyboardShouldPersistTaps="handled"
+                    >
+                      <TouchableOpacity
+                        onPress={() => setMenuSeciliKategori('all')}
+                        style={{
+                          paddingHorizontal: 12,
+                          paddingVertical: 8,
+                          borderRadius: 20,
+                          backgroundColor: menuSeciliKategori === 'all' ? '#0d9488' : '#e2e8f0',
+                        }}
+                        activeOpacity={0.85}
+                      >
+                        <Text
+                          style={{
+                            fontSize: 13,
+                            fontWeight: '600',
+                            color: menuSeciliKategori === 'all' ? '#ffffff' : '#64748b',
+                          }}
+                        >
+                          Tümü
+                        </Text>
+                      </TouchableOpacity>
+                      {menuKategoriler.map((k) => {
+                        const sel = menuSeciliKategori === k.id
+                        return (
+                          <TouchableOpacity
+                            key={k.id}
+                            onPress={() => setMenuSeciliKategori(k.id)}
+                            style={{
+                              paddingHorizontal: 12,
+                              paddingVertical: 8,
+                              borderRadius: 20,
+                              backgroundColor: sel ? '#0d9488' : '#e2e8f0',
+                            }}
+                            activeOpacity={0.85}
+                          >
+                            <Text
+                              style={{
+                                fontSize: 13,
+                                fontWeight: '600',
+                                color: sel ? '#ffffff' : '#64748b',
+                              }}
+                              numberOfLines={1}
+                            >
+                              {k.icon ? `${k.icon} ${k.ad}` : k.ad}
+                            </Text>
+                          </TouchableOpacity>
+                        )
+                      })}
+                    </ScrollView>
+                    <View style={{ marginTop: 8 }}>
+                      {menuDisplayGroups.map((group, gi) => (
+                        <View key={group.kategori.id}>
+                          <Text
+                            style={{
+                              fontSize: 14,
+                              fontWeight: '800',
+                              color: '#0A1628',
+                              marginBottom: 8,
+                              marginTop: gi > 0 ? 12 : 0,
+                            }}
+                          >
+                            {group.kategori.icon ? `${group.kategori.icon} ` : ''}
+                            {group.kategori.ad}
+                          </Text>
+                          {group.urunler.map((urun) => (
+                            <View
+                              key={urun.id}
+                              style={{
+                                flexDirection: 'row',
+                                gap: 10,
+                                marginBottom: 12,
+                                alignItems: 'flex-start',
+                              }}
+                            >
+                              {urun.gorsel_url ? (
+                                <Image
+                                  source={{ uri: urun.gorsel_url }}
+                                  style={{ width: 60, height: 60, borderRadius: 8 }}
+                                  contentFit="cover"
+                                />
+                              ) : (
+                                <View
+                                  style={{
+                                    width: 60,
+                                    height: 60,
+                                    borderRadius: 8,
+                                    backgroundColor: '#e2e8f0',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                  }}
+                                >
+                                  <Ionicons name="image-outline" size={24} color="#94a3b8" />
+                                </View>
+                              )}
+                              <View style={{ flex: 1, minWidth: 0 }}>
+                                <Text style={{ fontSize: 14, fontWeight: '700', color: '#0A1628' }}>{urun.ad}</Text>
+                                {urun.aciklama ? (
+                                  <Text
+                                    style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}
+                                    numberOfLines={4}
+                                  >
+                                    {urun.aciklama}
+                                  </Text>
+                                ) : null}
+                                <Text style={{ fontSize: 13, fontWeight: '700', color: '#0ABAB5', marginTop: 4 }}>
+                                  ₺{formatMenuFiyat(urun.fiyat)}
+                                </Text>
+                              </View>
+                            </View>
+                          ))}
+                        </View>
+                      ))}
+                    </View>
+                  </>
+                )}
+              </View>
+            )}
+          </View>
         </View>
       </ScrollView>
 
