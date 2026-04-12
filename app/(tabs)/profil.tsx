@@ -629,6 +629,9 @@ export default function ProfilScreen() {
                   : typeof r.sure === 'string' && String(r.sure).trim() !== ''
                     ? `${String(r.sure).trim()} gün`
                     : aktifSezlongSureStr(r)
+              const sezlongTam = sezlongMap[r.sezlong_id] ?? ''
+              const sezlongNo = sezlongTam.split(' - ')[1] ?? sezlongTam
+              const rezKodu = `MYL-${sezlongNo}`
               return (
                 <View
                   key={r.id}
@@ -661,9 +664,17 @@ export default function ProfilScreen() {
                       )}
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 15, fontWeight: '800', color: '#0f172a' }}>
-                        {r.tesisler?.ad ?? 'Tesis'}
-                      </Text>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Text
+                          style={{ fontSize: 15, fontWeight: '800', color: '#0f172a', flex: 1, marginRight: 8 }}
+                          numberOfLines={1}
+                        >
+                          {r.tesisler?.ad ?? 'Tesis'}
+                        </Text>
+                        <Text style={{ fontSize: 12, color: '#0d9488', fontWeight: 'bold' }}>
+                          {rezKodu}
+                        </Text>
+                      </View>
                       <Text style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>
                         Tarih: {formatRezTarih(r.baslangic_tarih ?? '')}
                       </Text>
