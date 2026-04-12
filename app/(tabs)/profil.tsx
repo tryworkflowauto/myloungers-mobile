@@ -33,6 +33,12 @@ type RezRow = {
   odenen: string
   durum: RezDurum
   kapakGorsel: string | null
+  rezervasyonKodu: string
+  grupAd: string
+  sehir: string
+  kategori: string
+  tesisSlug: string
+  sezlongLabel: string
 }
 
 function formatUyeAyYil(iso: string) {
@@ -55,6 +61,31 @@ function formatTutar(raw: number | string | null | undefined) {
   const n = typeof raw === 'number' ? raw : parseFloat(String(raw).replace(/\s/g, '').replace(',', '.'))
   if (Number.isNaN(n)) return `₺${raw}`
   return `₺${n.toLocaleString('tr-TR', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
+}
+
+function rezDurumLabel(d: RezDurum): string {
+  const labels: Record<RezDurum, string> = {
+    yaklasan: 'Yaklaşan',
+    aktif: 'Aktif',
+    gecmis: 'Geçmiş',
+    iptal: 'İptal',
+  }
+  return labels[d]
+}
+
+function rezDurumBadgeColors(d: RezDurum): { bg: string; fg: string } {
+  switch (d) {
+    case 'yaklasan':
+      return { bg: '#dbeafe', fg: '#1d4ed8' }
+    case 'aktif':
+      return { bg: '#dcfce7', fg: '#15803d' }
+    case 'gecmis':
+      return { bg: '#f1f5f9', fg: '#64748b' }
+    case 'iptal':
+      return { bg: '#fee2e2', fg: '#b91c1c' }
+    default:
+      return { bg: '#f1f5f9', fg: '#64748b' }
+  }
 }
 
 type AltSekme = 'rezervasyonlar' | 'yorumlar' | 'favoriler'
@@ -98,7 +129,9 @@ export default function ProfilScreen() {
 
         const { data: rezData, error: rezError } = await supabase
           .from('rezervasyonlar')
-          .select('id, baslangic_tarih, bitis_tarih, sezlong_id, toplam_tutar, durum, tesis_id, tesisler(ad, fotograflar)')
+          .select(
+            'id, baslangic_tarih, bitis_tarih, sezlong_id, toplam_tutar, durum, tesis_id, tesisler(ad, fotograflar, sehir, kategori, slug), sezlonglar(numara, grup_id, sezlong_gruplari(ad))',
+          )
           .eq('kullanici_id', data.id)
           .order('baslangic_tarih', { ascending: false })
 
@@ -109,6 +142,38 @@ export default function ProfilScreen() {
           setRezervasyonlar(
             rezData.map((r: any) => {
               const foto = r.tesisler?.fotograflar?.[0]
+              const sezlong = Array.isArray(r.sezlonglar) ? r.sezlonglar[0] : r.sezlonglar
+              const grupAdRaw = sezlong?.sezlong_gruplari?.ad ?? ''
+              const grupAd = String(grupAdRaw)
+              const prefix = (sezlong?.sezlong_gruplari?.ad ?? '').charAt(0).toUpperCase()
+              const numara = sezlong?.numara ?? ''
+              const rezervasyonKodu = 'MYL-' + prefix + String(numara)
+              const sezlongLabel =
+                grupAd.trim().length > 0
+                  ? `${grupAd} - ${prefix}${String(numara)}`
+                  : `${prefix}${String(numara)}`
+
+              let kategoriLabel = ''
+              try {
+                const raw = r.tesisler?.kategori ?? '[]'
+                const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+                if (Array.isArray(parsed)) {
+                  kategoriLabel = parsed
+                    .map((k: string) =>
+                      k
+                        .split(' ')
+                        .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+                        .join(' '),
+                    )
+                    .join(' · ')
+                } else {
+                  kategoriLabel =
+                    String(parsed).charAt(0).toUpperCase() + String(parsed).slice(1).toLowerCase()
+                }
+              } catch {
+                kategoriLabel = String(r.tesisler?.kategori ?? '')
+              }
+
               const baslangic = r.baslangic_tarih ? new Date(r.baslangic_tarih) : null
               const bitis = r.bitis_tarih ? new Date(r.bitis_tarih) : null
               const bugun = new Date()
@@ -126,22 +191,28 @@ export default function ProfilScreen() {
               }
 
               return {
-              id: r.id,
-              tesisAd: r.tesisler?.ad ?? 'Tesis',
-              kapakGorsel: typeof foto === 'string' ? foto : (foto?.url ?? foto?.src ?? foto?.path ?? null),
-              tarih: r.baslangic_tarih ?? '',
-              sezlong: r.sezlong_id ?? '-',
-              sure: (() => {
-                if (!r.bitis_tarih || !r.baslangic_tarih) return '-'
-                const d0 = new Date(r.baslangic_tarih)
-                const d1 = new Date(r.bitis_tarih)
-                if (Number.isNaN(d0.getTime()) || Number.isNaN(d1.getTime())) return '-'
-                const diff = Math.round((d1.getTime() - d0.getTime()) / (1000 * 60 * 60 * 24))
-                return `${diff} gün`
-              })(),
-              odenen: r.toplam_tutar ? `₺${r.toplam_tutar}` : '₺0',
-              durum: rezDurum,
-            }
+                id: r.id,
+                tesisAd: r.tesisler?.ad ?? 'Tesis',
+                kapakGorsel: typeof foto === 'string' ? foto : (foto?.url ?? foto?.src ?? foto?.path ?? null),
+                tarih: r.baslangic_tarih ?? '',
+                sezlong: String(r.sezlong_id ?? '-'),
+                sure: (() => {
+                  if (!r.bitis_tarih || !r.baslangic_tarih) return '-'
+                  const d0 = new Date(r.baslangic_tarih)
+                  const d1 = new Date(r.bitis_tarih)
+                  if (Number.isNaN(d0.getTime()) || Number.isNaN(d1.getTime())) return '-'
+                  const diff = Math.round((d1.getTime() - d0.getTime()) / (1000 * 60 * 60 * 24))
+                  return `${Math.max(1, diff)} gün`
+                })(),
+                odenen: formatTutar(r.toplam_tutar),
+                durum: rezDurum,
+                rezervasyonKodu,
+                grupAd,
+                sehir: r.tesisler?.sehir ?? '',
+                kategori: kategoriLabel,
+                tesisSlug: r.tesisler?.slug ?? '',
+                sezlongLabel,
+              }
             }),
           )
         }
@@ -180,6 +251,16 @@ export default function ProfilScreen() {
     if (rezFilter === 'tum') return rezervasyonlar
     return rezervasyonlar.filter((r) => r.durum === rezFilter)
   }, [rezFilter, rezervasyonlar])
+
+  const rezFilterCounts = useMemo(() => {
+    return {
+      tum: rezervasyonlar.length,
+      yaklasan: rezervasyonlar.filter((x) => x.durum === 'yaklasan').length,
+      aktif: rezervasyonlar.filter((x) => x.durum === 'aktif').length,
+      gecmis: rezervasyonlar.filter((x) => x.durum === 'gecmis').length,
+      iptal: rezervasyonlar.filter((x) => x.durum === 'iptal').length,
+    }
+  }, [rezervasyonlar])
 
   const handleCikis = async () => {
     await supabase.auth.signOut()
@@ -294,74 +375,129 @@ export default function ProfilScreen() {
         </View>
 
         {altSekme === 'rezervasyonlar' ? (
-          <View style={styles.card}>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.filtreScroll}
-            >
-              {(
-                [
-                  { key: 'tum' as const, label: 'Tümü' },
-                  { key: 'yaklasan' as const, label: 'Yaklaşan' },
-                  { key: 'aktif' as const, label: 'Aktif' },
-                  { key: 'gecmis' as const, label: 'Geçmiş' },
-                  { key: 'iptal' as const, label: 'İptal' },
-                ] as const
-              ).map((f) => (
-                <TouchableOpacity
-                  key={f.key}
-                  style={[styles.filtreChip, rezFilter === f.key && styles.filtreChipActive]}
-                  onPress={() => setRezFilter(f.key)}
-                  activeOpacity={0.85}
-                >
-                  <Text
-                    style={[styles.filtreChipText, rezFilter === f.key && styles.filtreChipTextActive]}
+          <>
+            <View style={styles.card}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.filtreScroll}
+              >
+                {(
+                  [
+                    { key: 'tum' as const, label: `Tümü (${rezFilterCounts.tum})` },
+                    { key: 'yaklasan' as const, label: `Yaklaşan (${rezFilterCounts.yaklasan})` },
+                    { key: 'aktif' as const, label: `Aktif (${rezFilterCounts.aktif})` },
+                    { key: 'gecmis' as const, label: `Geçmiş (${rezFilterCounts.gecmis})` },
+                    { key: 'iptal' as const, label: `İptal (${rezFilterCounts.iptal})` },
+                  ] as const
+                ).map((f) => (
+                  <TouchableOpacity
+                    key={f.key}
+                    style={[styles.filtreChip, rezFilter === f.key && styles.filtreChipActive]}
+                    onPress={() => setRezFilter(f.key)}
+                    activeOpacity={0.85}
                   >
-                    {f.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-
+                    <Text
+                      style={[styles.filtreChipText, rezFilter === f.key && styles.filtreChipTextActive]}
+                    >
+                      {f.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+            <View style={{ marginHorizontal: 12, paddingHorizontal: 16 }}>
             {filtrelenmisRez.length === 0 ? (
               <Text style={styles.bosListe}>Bu filtrede rezervasyon yok.</Text>
             ) : (
-              filtrelenmisRez.map((r) => (
-                <View key={r.id} style={styles.rezCard}>
-                  <View style={styles.rezFoto}>
-                    {r.kapakGorsel ? (
-                      <Image
-                        source={{ uri: r.kapakGorsel }}
-                        style={styles.rezFotoImg}
-                        resizeMode="cover"
-                      />
-                    ) : (
-                      <Ionicons name="image-outline" size={32} color="#94a3b8" />
-                    )}
-                  </View>
-                  <View style={styles.rezBody}>
-                    <Text style={styles.rezTesisAd} numberOfLines={2}>
-                      {r.tesisAd}
-                    </Text>
-                    <Text style={styles.rezMeta}>{r.tarih}</Text>
-                    <Text style={styles.rezMeta}>
-                      Şezlong: {r.sezlong} · Süre: {r.sure}
-                    </Text>
-                    <Text style={styles.rezOdenen}>Ödenen: {r.odenen}</Text>
-                    <View style={styles.rezBtnRow}>
-                      <TouchableOpacity style={styles.btnIptal} activeOpacity={0.85}>
-                        <Text style={styles.btnIptalText}>İptal Et</Text>
+              filtrelenmisRez.map((r) => {
+                const dc = rezDurumBadgeColors(r.durum)
+                return (
+                  <View key={r.id} style={styles.rezWebCard}>
+                    <View style={styles.rezWebTop}>
+                      <View style={styles.rezWebFotoWrap}>
+                        {r.kapakGorsel ? (
+                          <Image
+                            source={{ uri: r.kapakGorsel }}
+                            style={styles.rezWebFoto}
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <View style={[styles.rezWebFoto, styles.rezWebFotoPh]}>
+                            <Ionicons name="image-outline" size={32} color="#94a3b8" />
+                          </View>
+                        )}
+                      </View>
+                      <View style={styles.rezWebTopRight}>
+                        <View style={styles.rezWebTitleRow}>
+                          <View style={{ flex: 1, minWidth: 0 }}>
+                            <Text style={styles.rezTesisAd} numberOfLines={2}>
+                              {r.tesisAd}
+                            </Text>
+                            {r.kategori ? (
+                              <View style={styles.rezKategoriPill}>
+                                <Text style={styles.rezKategoriPillText}>{r.kategori}</Text>
+                              </View>
+                            ) : null}
+                            {r.sehir ? (
+                              <View style={styles.rezSehirRow}>
+                                <Ionicons name="location-outline" size={14} color="#64748b" />
+                                <Text style={styles.rezSehirText}>{r.sehir}</Text>
+                              </View>
+                            ) : null}
+                          </View>
+                          <View style={styles.rezKodChip}>
+                            <Text style={styles.rezKodChipText}>{r.rezervasyonKodu}</Text>
+                          </View>
+                        </View>
+                      </View>
+                    </View>
+                    <View style={[styles.rezDurumPill, { backgroundColor: dc.bg }]}>
+                      <Text style={[styles.rezDurumPillText, { color: dc.fg }]}>
+                        {rezDurumLabel(r.durum)}
+                      </Text>
+                    </View>
+                    <View style={styles.rezInfoBlock}>
+                      <View style={styles.rezInfoLineRow}>
+                        <Ionicons name="calendar-outline" size={13} color="#64748b" />
+                        <Text style={styles.rezInfoLine}>Tarih: {formatRezTarih(r.tarih)}</Text>
+                      </View>
+                      <View style={styles.rezInfoLineRow}>
+                        <Ionicons name="bed-outline" size={13} color="#64748b" />
+                        <Text style={styles.rezInfoLine}>Şezlong: {r.sezlongLabel}</Text>
+                      </View>
+                      <View style={styles.rezInfoLineRow}>
+                        <Ionicons name="time-outline" size={13} color="#64748b" />
+                        <Text style={styles.rezInfoLine}>Süre: {r.sure}</Text>
+                      </View>
+                      <View style={styles.rezInfoLineRow}>
+                        <Ionicons name="cash-outline" size={13} color="#0ABAB5" />
+                        <Text style={styles.rezInfoLine}>Ödenen: {r.odenen}</Text>
+                      </View>
+                    </View>
+                    <View style={styles.rezWebBtnRow}>
+                      <TouchableOpacity
+                        style={[styles.btnIptal, { backgroundColor: '#0A1628', borderColor: '#0A1628' }]}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={[styles.btnIptalText, { color: '#fff', fontWeight: '700' }]}>İptal Et</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity style={styles.btnTesiseGit} activeOpacity={0.85}>
+                      <TouchableOpacity
+                        style={[styles.btnTesiseGit, { backgroundColor: '#f97316' }]}
+                        activeOpacity={0.85}
+                        onPress={() => {
+                          if (r.tesisSlug) router.push(`/tesis/${r.tesisSlug}`)
+                        }}
+                      >
                         <Text style={styles.btnTesiseGitText}>Tesise Git</Text>
                       </TouchableOpacity>
                     </View>
                   </View>
-                </View>
-              ))
+                )
+              })
             )}
-          </View>
+            </View>
+          </>
         ) : null}
 
         {altSekme === 'yorumlar' ? (
@@ -375,7 +511,10 @@ export default function ProfilScreen() {
                     <Text style={styles.rezTesisAd}>{r.tesisler?.ad ?? 'Tesis'}</Text>
                     <View style={{ flexDirection: 'row', marginTop: 4 }}>
                       {[1, 2, 3, 4, 5].map((i) => (
-                        <Text key={i} style={{ color: i <= (r.puan ?? 0) ? '#f59e0b' : '#cbd5e1', fontSize: 16 }}>
+                        <Text
+                          key={i}
+                          style={{ color: i <= (r.puan ?? 0) ? '#f59e0b' : '#cbd5e1', fontSize: 16 }}
+                        >
                           ★
                         </Text>
                       ))}
@@ -593,10 +732,80 @@ const styles = StyleSheet.create({
   filtreChipText: { fontSize: 12, fontWeight: '600', color: '#64748b' },
   filtreChipTextActive: { color: '#0d9488', fontWeight: '700' },
   bosListe: { fontSize: 14, color: '#94a3b8', textAlign: 'center', paddingVertical: 16 },
+  rezWebCard: {
+    padding: 16,
+    marginBottom: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#e2e8f0',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  rezWebTop: { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
+  rezWebFotoWrap: {
+    width: 90,
+    height: 90,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#f1f5f9',
+  },
+  rezWebFoto: { width: 90, height: 90 },
+  rezWebFotoPh: { alignItems: 'center', justifyContent: 'center' },
+  rezWebTopRight: { flex: 1, minWidth: 0 },
+  rezWebTitleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  rezKodChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: '#f1f5f9',
+  },
+  rezKodChipText: { fontSize: 11, fontWeight: '700', color: '#64748b' },
+  rezKategoriPill: {
+    alignSelf: 'flex-start',
+    marginTop: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    backgroundColor: '#e0f2f1',
+  },
+  rezKategoriPillText: { fontSize: 11, fontWeight: '700', color: '#0d9488' },
+  rezSehirRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
+  rezSehirText: { fontSize: 12, color: '#64748b', flex: 1 },
+  rezDurumPill: {
+    alignSelf: 'flex-start',
+    marginTop: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  rezDurumPillText: { fontSize: 12, fontWeight: '700' },
+  rezInfoBlock: { marginTop: 12, gap: 6 },
+  rezInfoLineRow: { flexDirection: 'row', gap: 4, alignItems: 'center' },
+  rezInfoLine: { fontSize: 13, color: '#374151' },
+  rezWebBtnRow: { flexDirection: 'row', gap: 10, marginTop: 14 },
+  rezWebBtnIptal: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#fff',
+  },
+  rezWebBtnIptalText: { fontSize: 13, fontWeight: '700', color: '#64748b' },
+  rezWebBtnGit: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: '#0ABAB5',
+  },
   rezCard: {
     flexDirection: 'row',
     gap: 12,
-    paddingVertical: 12,
+    padding: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#e2e8f0',
   },
@@ -611,37 +820,47 @@ const styles = StyleSheet.create({
   favFoto: { width: 90, height: 90 },
   favBody: { flex: 1, justifyContent: 'center' },
   rezFoto: {
-    width: 72,
-    height: 72,
+    width: 64,
+    height: 64,
     borderRadius: 10,
     backgroundColor: '#f1f5f9',
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
   },
-  rezFotoImg: { width: 72, height: 72, borderRadius: 10 },
+  rezFotoImg: { width: 64, height: 64, borderRadius: 10 },
   rezBody: { flex: 1, minWidth: 0 },
-  rezTesisAd: { fontSize: 15, fontWeight: '800', color: '#0A1628' },
-  rezMeta: { fontSize: 12, color: '#64748b', marginTop: 4 },
-  rezOdenen: { fontSize: 13, fontWeight: '700', color: '#0ABAB5', marginTop: 6 },
-  rezBtnRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
+  rezTesisAd: { fontSize: 13, fontWeight: '800', color: '#0A1628' },
+  rezMeta: { fontSize: 10, color: '#64748b', marginTop: 2 },
+  rezOdenen: { fontSize: 11, fontWeight: '700', color: '#0ABAB5', marginTop: 3 },
+  rezBtnRow: { flexDirection: 'row', gap: 6, marginTop: 6 },
   btnIptal: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: 10,
+    paddingVertical: 7,
+    paddingHorizontal: 8,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: '#0A1628',
     backgroundColor: '#fff',
   },
-  btnIptalText: { fontSize: 13, fontWeight: '700', color: '#64748b' },
+  btnIptalText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#0A1628',
+  },
   btnTesiseGit: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: 10,
+    paddingVertical: 7,
+    paddingHorizontal: 8,
     borderRadius: 10,
-    backgroundColor: '#0ABAB5',
+    backgroundColor: '#f97316',
   },
-  btnTesiseGitText: { fontSize: 13, fontWeight: '700', color: '#fff' },
+  btnTesiseGitText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#fff',
+  },
   placeholderTab: { fontSize: 14, color: '#64748b', textAlign: 'center', paddingVertical: 8 },
 })
