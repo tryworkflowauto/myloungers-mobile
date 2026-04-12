@@ -85,6 +85,15 @@ function formatTutar(raw: number | string | null | undefined) {
   return `₺${n.toLocaleString('tr-TR', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
 }
 
+function aktifSezlongSureStr(r: { baslangic_tarih?: string; bitis_tarih?: string }) {
+  if (!r.bitis_tarih || !r.baslangic_tarih) return '—'
+  const d0 = new Date(r.baslangic_tarih)
+  const d1 = new Date(r.bitis_tarih)
+  if (Number.isNaN(d0.getTime()) || Number.isNaN(d1.getTime())) return '—'
+  const diff = Math.round((d1.getTime() - d0.getTime()) / (1000 * 60 * 60 * 24))
+  return `${Math.max(1, diff)} gün`
+}
+
 function rezDurumLabel(d: RezDurum): string {
   const labels: Record<RezDurum, string> = {
     yaklasan: 'Yaklaşan',
@@ -133,6 +142,7 @@ export default function ProfilScreen() {
   const [bildirimler, setBildirimler] = useState<any[]>([])
   const [bildirimlerYukleniyor, setBildirimlerYukleniyor] = useState(false)
   const [aktifSezlonglar, setAktifSezlonglar] = useState<any[]>([])
+  const [sezlongMap, setSezlongMap] = useState<Record<string, string>>({})
   const [epostaBildirim, setEpostaBildirim] = useState(true)
   const [modalParola, setModalParola] = useState(false)
   const [modalKvkk, setModalKvkk] = useState(false)
@@ -286,12 +296,31 @@ export default function ProfilScreen() {
         const bugun = new Date().toISOString().split('T')[0]
         const { data: aktifSezData, error: aktifSezErr } = await supabase
           .from('rezervasyonlar')
-          .select('*, tesisler(ad, fotograflar, sehir, ilce)')
+          .select('*, tesisler(ad, slug, fotograflar, sehir, ilce)')
           .eq('kullanici_id', data.id)
           .eq('durum', 'onaylandi')
           .lte('baslangic_tarih', bugun)
           .gte('bitis_tarih', bugun)
-        if (!aktifSezErr && aktifSezData) setAktifSezlonglar(aktifSezData)
+        if (!aktifSezErr && aktifSezData) {
+          setAktifSezlonglar(aktifSezData)
+          const sezlongIds = aktifSezData.map((r: any) => r.sezlong_id).filter(Boolean)
+          let sezlongMap: Record<string, string> = {}
+          if (sezlongIds.length > 0) {
+            const { data: sezData } = await supabase
+              .from('sezlonglar')
+              .select('id, no, numara, grup_id, sezlong_gruplari(ad)')
+              .in('id', sezlongIds)
+            if (sezData) {
+              sezData.forEach((s: any) => {
+                const grupAd = s.sezlong_gruplari?.ad ?? ''
+                const no = s.no || s.numara || ''
+                const prefix = grupAd ? grupAd.charAt(0).toUpperCase() : ''
+                sezlongMap[s.id] = grupAd ? `${grupAd} - ${prefix}${no}` : `${prefix}${no}`
+              })
+            }
+          }
+          setSezlongMap(sezlongMap)
+        }
       }
     } catch (e) {
       console.log('LOAD PROFIL HATA:', e)
@@ -491,19 +520,97 @@ export default function ProfilScreen() {
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Aktif Şezlonglarım</Text>
-          <View style={styles.sezlongBos}>
-            <Ionicons name="umbrella-outline" size={40} color="#94a3b8" />
-            <Text style={styles.sezlongBosText}>
-              {aktifSezlonglar.length === 0 ? 'Henüz aktif şezlongunuz yok' : `${aktifSezlonglar.length} aktif şezlong`}
-            </Text>
-            <TouchableOpacity
-              style={styles.btnRezYap}
-              activeOpacity={0.9}
-              onPress={() => router.push('/')}
-            >
-              <Text style={styles.btnRezYapText}>Rezervasyon Yap</Text>
-            </TouchableOpacity>
-          </View>
+          {aktifSezlonglar.length === 0 ? (
+            <View style={styles.sezlongBos}>
+              <Ionicons name="umbrella-outline" size={40} color="#94a3b8" />
+              <Text style={styles.sezlongBosText}>Henüz aktif şezlongunuz yok</Text>
+              <TouchableOpacity
+                style={styles.btnRezYap}
+                activeOpacity={0.9}
+                onPress={() => router.push('/')}
+              >
+                <Text style={styles.btnRezYapText}>Rezervasyon Yap</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            aktifSezlonglar.map((r: any) => {
+              const foto0 = r.tesisler?.fotograflar?.[0]
+              const fotoUri =
+                foto0 == null
+                  ? ''
+                  : typeof foto0 === 'string'
+                    ? foto0
+                    : String(foto0?.src ?? foto0?.url ?? '')
+              const sureGun =
+                typeof r.sure === 'number' && Number.isFinite(r.sure) && r.sure > 0
+                  ? `${r.sure} gün`
+                  : typeof r.sure === 'string' && String(r.sure).trim() !== ''
+                    ? `${String(r.sure).trim()} gün`
+                    : aktifSezlongSureStr(r)
+              return (
+                <View
+                  key={r.id}
+                  style={{
+                    backgroundColor: '#fff',
+                    borderRadius: 12,
+                    padding: 12,
+                    marginBottom: 10,
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 1 },
+                    shadowOpacity: 0.08,
+                    shadowRadius: 6,
+                    elevation: 3,
+                  }}
+                >
+                  <View style={{ flexDirection: 'row', gap: 12 }}>
+                    <View style={{ width: 80, height: 80, borderRadius: 8, overflow: 'hidden' }}>
+                      {fotoUri ? (
+                        <Image source={{ uri: fotoUri }} style={{ width: 80, height: 80 }} resizeMode="cover" />
+                      ) : (
+                        <View
+                          style={{
+                            width: 80,
+                            height: 80,
+                            backgroundColor: '#e2e8f0',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        />
+                      )}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 15, fontWeight: '800', color: '#0f172a' }}>
+                        {r.tesisler?.ad ?? 'Tesis'}
+                      </Text>
+                      <Text style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>
+                        Tarih: {formatRezTarih(r.baslangic_tarih ?? '')}
+                      </Text>
+                      <Text style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
+                        {'\u015eezlong: ' + (sezlongMap[r.sezlong_id] ?? '')}
+                      </Text>
+                      <Text style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
+                        Süre: {sureGun}
+                      </Text>
+                      <Text style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
+                        Ödenen: {formatTutar(r.toplam_tutar)}
+                      </Text>
+                    </View>
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.btnTesiseGit, { backgroundColor: '#0ABAB5', marginTop: 12, flex: undefined, alignSelf: 'stretch' }]}
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      const s = r.tesisler?.slug
+                      if (s)
+                        router.push({ pathname: '/tesis/[slug]', params: { slug: String(s) } })
+                    }}
+                  >
+                    <Text style={styles.btnTesiseGitText}>Tesise Git</Text>
+                  </TouchableOpacity>
+                </View>
+              )
+            })
+          )}
         </View>
 
         <ScrollView
