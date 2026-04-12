@@ -56,7 +56,7 @@ type RezRow = {
   odenen: string
   durum: RezDurum
   kapakGorsel: string | null
-  rezervasyonKodu: string
+  rezervasyon_kodu: string
   grupAd: string
   sehir: string
   kategori: string
@@ -199,25 +199,28 @@ export default function ProfilScreen() {
       const {
         data: { user },
       } = await supabase.auth.getUser()
-      if (!user) {
-        Alert.alert('Hata', 'Oturum bulunamad\u0131.')
-        return
-      }
-      const { data, error } = await supabase
+      if (!user) return
+
+      const bugun = new Date().toISOString().split('T')[0]
+
+      const { data: rezData, error: rezErr } = await supabase
         .from('rezervasyonlar')
         .select('*')
-        .eq('rezervasyon_kodu', raw)
         .eq('kullanici_id', user.id)
+        .eq('rezervasyon_kodu', kodInput.trim().toUpperCase())
+        .lte('baslangic_tarih', bugun)
+        .gte('bitis_tarih', bugun)
         .single()
-      if (error || !data) {
+
+      if (rezErr || !rezData) {
         setKodHata('Ge\u00e7ersiz kod')
         return
       }
+
+      setSuccessMesaj('Rezervasyon do\u011fruland\u0131! Ho\u015f geldiniz.')
+      setTimeout(() => setSuccessMesaj(''), 3000)
       setModalKodGir(false)
       setKodInput('')
-      setKodHata('')
-      setSuccessMesaj('Rezervasyon do\u011fruland\u0131! Ho\u015f geldiniz.')
-      setTimeout(() => setSuccessMesaj(''), 4000)
     } catch {
       setKodHata('Ge\u00e7ersiz kod')
     } finally {
@@ -266,7 +269,7 @@ export default function ProfilScreen() {
         const { data: rezData, error: rezError } = await supabase
           .from('rezervasyonlar')
           .select(
-            'id, baslangic_tarih, bitis_tarih, sezlong_id, toplam_tutar, durum, tesis_id, tesisler(ad, fotograflar, sehir, kategori, slug), sezlonglar(numara, grup_id, sezlong_gruplari(ad))',
+            'id, baslangic_tarih, bitis_tarih, sezlong_id, toplam_tutar, durum, tesis_id, rezervasyon_kodu, tesisler(ad, fotograflar, sehir, kategori, slug), sezlonglar(numara, grup_id, sezlong_gruplari(ad))',
           )
           .eq('kullanici_id', data.id)
           .order('baslangic_tarih', { ascending: false })
@@ -283,7 +286,6 @@ export default function ProfilScreen() {
               const grupAd = String(grupAdRaw)
               const prefix = (sezlong?.sezlong_gruplari?.ad ?? '').charAt(0).toUpperCase()
               const numara = sezlong?.numara ?? ''
-              const rezervasyonKodu = 'MYL-' + prefix + String(numara)
               const sezlongLabel =
                 grupAd.trim().length > 0
                   ? `${grupAd} - ${prefix}${String(numara)}`
@@ -342,7 +344,7 @@ export default function ProfilScreen() {
                 })(),
                 odenen: formatTutar(r.toplam_tutar),
                 durum: rezDurum,
-                rezervasyonKodu,
+                rezervasyon_kodu: r.rezervasyon_kodu ?? '',
                 grupAd,
                 sehir: r.tesisler?.sehir ?? '',
                 kategori: kategoriLabel,
@@ -631,7 +633,7 @@ export default function ProfilScreen() {
                     : aktifSezlongSureStr(r)
               const sezlongTam = sezlongMap[r.sezlong_id] ?? ''
               const sezlongNo = sezlongTam.split(' - ')[1] ?? sezlongTam
-              const rezKodu = `MYL-${sezlongNo}`
+              const rezKodu = r.rezervasyon_kodu ?? `MYL-${sezlongNo}`
               return (
                 <View
                   key={r.id}
@@ -799,6 +801,9 @@ export default function ProfilScreen() {
                             <Text style={styles.rezTesisAd} numberOfLines={2}>
                               {r.tesisAd}
                             </Text>
+                            <Text style={{ fontSize: 11, color: '#0d9488', fontWeight: 'bold' }}>
+                              {r.rezervasyon_kodu ?? ''}
+                            </Text>
                             {r.kategori ? (
                               <View style={styles.rezKategoriPill}>
                                 <Text style={styles.rezKategoriPillText}>{r.kategori}</Text>
@@ -810,9 +815,6 @@ export default function ProfilScreen() {
                                 <Text style={styles.rezSehirText}>{r.sehir}</Text>
                               </View>
                             ) : null}
-                          </View>
-                          <View style={styles.rezKodChip}>
-                            <Text style={styles.rezKodChipText}>{r.rezervasyonKodu}</Text>
                           </View>
                         </View>
                       </View>

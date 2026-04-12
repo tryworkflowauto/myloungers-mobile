@@ -174,6 +174,20 @@ export default function RezervasyonOzet() {
         return
       }
 
+      const tarihFormatli = (() => {
+        const d = new Date(tarih)
+        const gun = String(d.getDate()).padStart(2, '0')
+        const ay = String(d.getMonth() + 1).padStart(2, '0')
+        const yil = d.getFullYear()
+        return `${gun}${ay}${yil}`
+      })()
+
+      const grupPrefix = (params.grup_adi as string)?.[0]?.toUpperCase() ?? 'X'
+      const sezlongNo = params.sezlong_adi
+        ? String(params.sezlong_adi).replace(/^[A-Za-z]+[-\s]*/, '')
+        : ''
+      const rezervasyonKodu = `MYL-${tarihFormatli}-${grupPrefix}${sezlongNo}`
+
       const insertPayload: Record<string, unknown> = {
         tesis_id: uuidOrNull(tesis_id),
         kullanici_id: user.id,
@@ -183,6 +197,7 @@ export default function RezervasyonOzet() {
         durum: 'beklemede',
         toplam_tutar: Number(toplam.toFixed(2)),
         kisi_sayisi: kisiNum,
+        rezervasyon_kodu: rezervasyonKodu,
       }
 
       const { data: rezData, error: rezError } = await supabase
