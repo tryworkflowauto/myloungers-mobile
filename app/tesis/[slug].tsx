@@ -855,7 +855,7 @@ export default function TesisDetailScreen() {
           ) : null}
 
           {gruplar.length > 0 && (
-            <View style={styles.card}>
+            <View style={[styles.card, { backgroundColor: '#0d9488' }]}>
               <TouchableOpacity
                 onPress={() => setAcikPlan(!acikPlan)}
                 style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
@@ -867,19 +867,19 @@ export default function TesisDetailScreen() {
                       width: 36,
                       height: 36,
                       borderRadius: 18,
-                      backgroundColor: '#f0fdfa',
+                      backgroundColor: 'rgba(255,255,255,0.25)',
                       alignItems: 'center',
                       justifyContent: 'center',
                     }}
                   >
-                    <Ionicons name="grid-outline" size={18} color="#0ABAB5" />
+                    <Ionicons name="grid-outline" size={18} color="#fff" />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.sectionTitle}>Tesis Yerleşim Planı</Text>
-                    <Text style={{ fontSize: 11, color: '#94a3b8' }}>Bölgeye tıklayarak şezlong seçin</Text>
+                    <Text style={[styles.sectionTitle, { color: '#fff' }]}>Şezlong Seç</Text>
+                    <Text style={{ fontSize: 11, color: '#fff' }}>Uygun Şezlongu Seçin</Text>
                   </View>
                 </View>
-                <Ionicons name={acikPlan ? 'chevron-up' : 'chevron-down'} size={20} color="#94a3b8" />
+                <Ionicons name={acikPlan ? 'chevron-up' : 'chevron-down'} size={20} color="#fff" />
               </TouchableOpacity>
 
               {acikPlan && (
