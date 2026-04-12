@@ -4,7 +4,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useEffect, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
-  Alert,
   Dimensions,
   Linking,
   Modal,
@@ -292,11 +291,8 @@ export default function TesisDetailScreen() {
   const [sezlonglar, setSezlonglar] = useState<SezlongRow[]>([])
   const [rezerveIdsForDate, setRezeveIdsForDate] = useState<Set<string>>(new Set())
   const [secilenSezlongIds, setSecilenSezlongIds] = useState<Set<string>>(new Set())
-  const [planTarih, setPlanTarih] = useState<Date>(() => {
-    const d = new Date()
-    d.setHours(12, 0, 0, 0)
-    return d
-  })
+  const [secilenTarih, setSecilenTarih] = useState<Date | null>(null)
+  const [tarihUyariGoster, setTarihUyariGoster] = useState(false)
   const [showPlanDatePicker, setShowPlanDatePicker] = useState(false)
   const [planCalendarViewMonth, setPlanCalendarViewMonth] = useState(() => new Date())
   const [planPendingDate, setPlanPendingDate] = useState(() => {
@@ -455,7 +451,11 @@ export default function TesisDetailScreen() {
 
   useEffect(() => {
     if (!row?.id) return
-    const tarihStr = planTarih.toISOString().split('T')[0]
+    if (!secilenTarih) {
+      setRezeveIdsForDate(new Set())
+      return
+    }
+    const tarihStr = secilenTarih.toISOString().split('T')[0]
     void supabase
       .from('rezervasyonlar')
       .select('sezlong_id')
@@ -466,7 +466,7 @@ export default function TesisDetailScreen() {
       .then(({ data }) => {
         if (data) setRezeveIdsForDate(new Set(data.map((r: { sezlong_id: string }) => r.sezlong_id)))
       })
-  }, [row?.id, planTarih])
+  }, [row?.id, secilenTarih])
 
   const planCalendarRows = useMemo(() => {
     const y = planCalendarViewMonth.getFullYear()
@@ -494,7 +494,7 @@ export default function TesisDetailScreen() {
   })
 
   const openPlanDatePicker = () => {
-    const d = new Date(planTarih)
+    const d = secilenTarih ? new Date(secilenTarih) : new Date()
     d.setHours(12, 0, 0, 0)
     setPlanPendingDate(d)
     setPlanCalendarViewMonth(new Date(d.getFullYear(), d.getMonth(), 1))
@@ -512,7 +512,7 @@ export default function TesisDetailScreen() {
   const onPlanCalendarConfirm = () => {
     const d = new Date(planPendingDate)
     d.setHours(12, 0, 0, 0)
-    setPlanTarih(d)
+    setSecilenTarih(d)
     setShowPlanDatePicker(false)
   }
 
@@ -890,17 +890,19 @@ export default function TesisDetailScreen() {
                   flexDirection: 'row',
                   alignItems: 'center',
                   gap: 8,
-                  backgroundColor: '#f0fdfa',
+                  backgroundColor: '#1e3a5f',
                   borderRadius: 10,
                   padding: 10,
                   marginBottom: 16,
                 }}
               >
-                <Ionicons name="calendar-outline" size={16} color="#0ABAB5" />
-                <Text style={{ fontSize: 14, color: '#0ABAB5', fontWeight: '700' }}>
-                  {planTarih.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })}
+                <Ionicons name="calendar-outline" size={16} color="#fff" />
+                <Text style={{ fontSize: 14, color: '#fff', fontWeight: '700' }}>
+                  {secilenTarih
+                    ? secilenTarih.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })
+                    : 'Tarih seçin'}
                 </Text>
-                <Ionicons name="chevron-down" size={16} color="#0ABAB5" />
+                <Ionicons name="chevron-down" size={16} color="#fff" />
               </TouchableOpacity>
 
               <View
@@ -1044,6 +1046,12 @@ export default function TesisDetailScreen() {
                             key={s.id}
                             disabled={disabled}
                             onPress={() => {
+                              if (secilenTarih == null) {
+                                setTarihUyariGoster(true)
+                                setTimeout(() => setTarihUyariGoster(false), 2500)
+                                openPlanDatePicker()
+                                return
+                              }
                               setSecilenSezlongIds((prev) => {
                                 const next = new Set(prev)
                                 if (next.has(s.id)) next.delete(s.id)
@@ -1809,6 +1817,43 @@ export default function TesisDetailScreen() {
         </View>
       </Modal>
 
+      {tarihUyariGoster ? (
+        <View
+          style={{
+            position: 'absolute',
+            bottom: 100,
+            left: 24,
+            right: 24,
+            zIndex: 999,
+            backgroundColor: '#1e3a5f',
+            borderRadius: 12,
+            padding: 14,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 10,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.2,
+            shadowRadius: 8,
+            elevation: 6,
+          }}
+          pointerEvents="none"
+        >
+          <Ionicons name="calendar-outline" size={20} color="#fff" />
+          <Text
+            style={{
+              flex: 1,
+              color: '#fff',
+              fontWeight: '700',
+              fontSize: 14,
+              textAlign: 'center',
+            }}
+          >
+            {'L\u00fctfen \u00f6nce tarih se\u00e7iniz'}
+          </Text>
+        </View>
+      ) : null}
+
       <View style={[styles.stickyBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
         <View style={styles.stickyBarRow}>
           <TouchableOpacity
@@ -1838,7 +1883,36 @@ export default function TesisDetailScreen() {
           <TouchableOpacity
             style={styles.stickyReserveBtn}
             activeOpacity={0.9}
-            onPress={() => Alert.alert('Yakında', 'Ödeme sistemi yakında aktif olacak')}
+            onPress={() => {
+              const firstId =
+                secilenSezlongIds.size > 0 ? [...secilenSezlongIds][0] : undefined
+              const secilenSezlong = firstId
+                ? sezlonglar.find((s) => s.id === firstId)
+                : undefined
+              const secilenGrup = secilenSezlong
+                ? gruplar.find((g) => g.id === secilenSezlong.grup_id)
+                : undefined
+              const fiyatVal = secilenGrup?.fiyat ?? secilenGrup?.fiyat_hafici ?? null
+              router.push({
+                pathname: '/rezervasyon-ozet',
+                params: {
+                  tesis_id: row.id,
+                  tesis_adi: row.ad,
+                  tesis_slug: slug,
+                  grup_id: secilenGrup?.id ?? '',
+                  grup_adi: secilenGrup?.ad ?? '',
+                  sezlong_id: secilenSezlong?.id ?? '',
+                  sezlong_adi: secilenSezlong
+                    ? `${secilenGrup?.ad ?? ''} ${secilenSezlong.numara}`.trim()
+                    : '',
+                  fiyat: fiyatVal != null ? String(fiyatVal) : '',
+                  tarih: secilenTarih ? secilenTarih.toISOString().split('T')[0] : '',
+                  sure: '',
+                  kisi_sayisi: '1',
+                  tesis_fotograf: parsePhotoSrcs(row.fotograflar)[0] ?? '',
+                },
+              })
+            }}
             accessibilityRole="button"
           >
             <Text style={styles.stickyReserveBtnText}>Rezervasyon Yap</Text>
