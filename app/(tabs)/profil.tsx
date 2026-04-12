@@ -3,10 +3,14 @@ import { useRouter } from 'expo-router'
 import { useEffect, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
+  Alert,
   Image,
+  Modal,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native'
@@ -20,8 +24,26 @@ type ProfilKullanici = {
   ad: string
   soyad: string
   email: string
+  telefon: string
+  sehir: string
   uyeAyYil: string
   eposta_dogrulandi: boolean
+}
+
+type ProfilForm = {
+  ad: string
+  soyad: string
+  email: string
+  telefon: string
+  sehir: string
+  dogumTarihi: string
+}
+
+const formatDateForDB = (dateStr: string) => {
+  if (!dateStr) return null
+  const parts = dateStr.split('.')
+  if (parts.length !== 3) return null
+  return `${parts[2]}-${parts[1]}-${parts[0]}`
 }
 
 type RezRow = {
@@ -88,7 +110,13 @@ function rezDurumBadgeColors(d: RezDurum): { bg: string; fg: string } {
   }
 }
 
-type AltSekme = 'rezervasyonlar' | 'yorumlar' | 'favoriler'
+type AltSekme =
+  | 'rezervasyonlar'
+  | 'yorumlar'
+  | 'favoriler'
+  | 'profil-bilgileri'
+  | 'bildirimler'
+  | 'guvenlik'
 type RezFilter = 'tum' | RezDurum
 
 export default function ProfilScreen() {
@@ -97,9 +125,21 @@ export default function ProfilScreen() {
   const [rezFilter, setRezFilter] = useState<RezFilter>('tum')
   const [loading, setLoading] = useState(true)
   const [profil, setProfil] = useState<ProfilKullanici | null>(null)
+  const [form, setForm] = useState<ProfilForm | null>(null)
   const [rezervasyonlar, setRezervasyonlar] = useState<RezRow[]>([])
   const [yorumlar, setYorumlar] = useState<any[]>([])
   const [favoriler, setFavoriler] = useState<any[]>([])
+  const [kaydetBasari, setKaydetBasari] = useState(false)
+  const [bildirimler, setBildirimler] = useState<any[]>([])
+  const [bildirimlerYukleniyor, setBildirimlerYukleniyor] = useState(false)
+  const [aktifSezlonglar, setAktifSezlonglar] = useState<any[]>([])
+  const [epostaBildirim, setEpostaBildirim] = useState(true)
+  const [modalParola, setModalParola] = useState(false)
+  const [modalKvkk, setModalKvkk] = useState(false)
+  const [mevcutParola, setMevcutParola] = useState('')
+  const [yeniParola, setYeniParola] = useState('')
+  const [yeniParolaTekrar, setYeniParolaTekrar] = useState('')
+  const [successMesaj, setSuccessMesaj] = useState('')
 
   const loadProfil = async () => {
     try {
@@ -110,7 +150,7 @@ export default function ProfilScreen() {
 
       const { data, error } = await supabase
         .from('kullanicilar')
-        .select('id, ad, soyad, telefon, email, rol, created_at')
+        .select('id, ad, soyad, telefon, email, sehir, dogum_tarihi, rol, created_at')
         .eq('email', user.email)
         .single()
 
@@ -118,13 +158,25 @@ export default function ProfilScreen() {
       console.log('KULLANICI ERROR:', error)
 
       if (data) {
+        const d = data.dogum_tarihi ? data.dogum_tarihi.split('-').reverse().join('.') : ''
+        const emailVal = data.email ?? user.email ?? ''
         setProfil({
           id: data.id,
           ad: data.ad ?? '',
           soyad: data.soyad ?? '',
-          email: data.email ?? user.email ?? '',
+          email: emailVal,
+          telefon: data.telefon != null ? String(data.telefon) : '',
+          sehir: data.sehir != null ? String(data.sehir) : '',
           uyeAyYil: formatUyeAyYil(data.created_at),
           eposta_dogrulandi: !!user.email_confirmed_at,
+        })
+        setForm({
+          ad: data.ad ?? '',
+          soyad: data.soyad ?? '',
+          email: emailVal,
+          telefon: data.telefon != null ? String(data.telefon) : '',
+          sehir: data.sehir != null ? String(data.sehir) : '',
+          dogumTarihi: d,
         })
 
         const { data: rezData, error: rezError } = await supabase
@@ -230,6 +282,16 @@ export default function ProfilScreen() {
           .eq('kullanici_id', data.id)
           .order('created_at', { ascending: false })
         if (favData) setFavoriler(favData)
+
+        const bugun = new Date().toISOString().split('T')[0]
+        const { data: aktifSezData, error: aktifSezErr } = await supabase
+          .from('rezervasyonlar')
+          .select('*, tesisler(ad, fotograflar, sehir, ilce)')
+          .eq('kullanici_id', data.id)
+          .eq('durum', 'onaylandi')
+          .lte('baslangic_tarih', bugun)
+          .gte('bitis_tarih', bugun)
+        if (!aktifSezErr && aktifSezData) setAktifSezlonglar(aktifSezData)
       }
     } catch (e) {
       console.log('LOAD PROFIL HATA:', e)
@@ -241,6 +303,28 @@ export default function ProfilScreen() {
   useEffect(() => {
     void loadProfil()
   }, [])
+
+  useEffect(() => {
+    if (altSekme !== 'bildirimler') return
+    const fetchBildirimler = async () => {
+      setBildirimlerYukleniyor(true)
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) {
+        setBildirimlerYukleniyor(false)
+        return
+      }
+      const { data, error } = await supabase
+        .from('bildirimler')
+        .select('*')
+        .eq('kullanici_id', user.id)
+        .order('created_at', { ascending: false })
+      if (!error && data) setBildirimler(data)
+      setBildirimlerYukleniyor(false)
+    }
+    void fetchBildirimler()
+  }, [altSekme])
 
   const avatarHarf = useMemo(() => {
     const t = (profil?.ad ?? '').trim()
@@ -267,6 +351,70 @@ export default function ProfilScreen() {
     router.replace('/giris')
   }
 
+  const handleKaydetProfil = async () => {
+    if (!profil || !form) return
+    const { error } = await supabase
+      .from('kullanicilar')
+      .update({
+        ad: form.ad.trim(),
+        soyad: form.soyad.trim(),
+        telefon: form.telefon.trim() || null,
+        sehir: form.sehir.trim() || null,
+        dogum_tarihi: formatDateForDB(form.dogumTarihi) || null,
+      })
+      .eq('id', profil.id)
+    if (error) {
+      Alert.alert('Hata', error.message)
+      return
+    }
+    setProfil({
+      ...profil,
+      ad: form.ad.trim(),
+      soyad: form.soyad.trim(),
+      telefon: form.telefon.trim(),
+      sehir: form.sehir.trim(),
+    })
+    setKaydetBasari(true)
+    setTimeout(() => setKaydetBasari(false), 2000)
+  }
+
+  const handleParolaDegistir = async () => {
+    if (!mevcutParola.trim() || !yeniParola.trim() || !yeniParolaTekrar.trim()) {
+      Alert.alert('Hata', 'Tüm alanları doldurun.')
+      return
+    }
+    if (yeniParola !== yeniParolaTekrar) {
+      Alert.alert('Hata', 'Yeni parola ile tekrarı eşleşmiyor.')
+      return
+    }
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    if (!user?.email) {
+      Alert.alert('Hata', 'Oturum bulunamadı.')
+      return
+    }
+    const { error: signErr } = await supabase.auth.signInWithPassword({
+      email: user.email,
+      password: mevcutParola,
+    })
+    if (signErr) {
+      Alert.alert('Hata', 'Mevcut parola hatalı.')
+      return
+    }
+    const { error } = await supabase.auth.updateUser({ password: yeniParola })
+    if (error) {
+      Alert.alert('Hata', error.message)
+      return
+    }
+    setMevcutParola('')
+    setYeniParola('')
+    setYeniParolaTekrar('')
+    setModalParola(false)
+    setSuccessMesaj('Parola ba\u015far\u0131yla g\u00fcncellendi')
+    setTimeout(() => setSuccessMesaj(''), 3000)
+  }
+
   if (loading) {
     return (
       <SafeAreaView style={[styles.safe, styles.loadingWrap]} edges={['top']}>
@@ -276,7 +424,13 @@ export default function ProfilScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={[styles.safe, styles.safeRelative]} edges={['top']}>
+      {successMesaj !== '' ? (
+        <View style={styles.successToast} pointerEvents="none">
+          <Ionicons name="checkmark-circle-outline" size={22} color="#fff" />
+          <Text style={styles.successToastText}>{successMesaj}</Text>
+        </View>
+      ) : null}
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
@@ -339,7 +493,9 @@ export default function ProfilScreen() {
           <Text style={styles.cardTitle}>Aktif Şezlonglarım</Text>
           <View style={styles.sezlongBos}>
             <Ionicons name="umbrella-outline" size={40} color="#94a3b8" />
-            <Text style={styles.sezlongBosText}>Henüz aktif şezlongunuz yok</Text>
+            <Text style={styles.sezlongBosText}>
+              {aktifSezlonglar.length === 0 ? 'Henüz aktif şezlongunuz yok' : `${aktifSezlonglar.length} aktif şezlong`}
+            </Text>
             <TouchableOpacity
               style={styles.btnRezYap}
               activeOpacity={0.9}
@@ -350,12 +506,20 @@ export default function ProfilScreen() {
           </View>
         </View>
 
-        <View style={styles.altSekmeBar}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.altSekmeBar}
+          contentContainerStyle={styles.altSekmeBarContent}
+        >
           {(
             [
               { key: 'rezervasyonlar' as const, label: 'Rezervasyonlarım' },
               { key: 'yorumlar' as const, label: 'Yorumlarım' },
               { key: 'favoriler' as const, label: 'Favorilerim' },
+              { key: 'bildirimler' as const, label: 'Bildirimler' },
+              { key: 'guvenlik' as const, label: 'Güvenlik' },
+              { key: 'profil-bilgileri' as const, label: 'Profilim' },
             ] as const
           ).map((s) => (
             <TouchableOpacity
@@ -365,6 +529,7 @@ export default function ProfilScreen() {
               activeOpacity={0.85}
             >
               <Text
+                numberOfLines={1}
                 style={[styles.altSekmeText, altSekme === s.key && styles.altSekmeTextActive]}
               >
                 {s.label}
@@ -372,7 +537,7 @@ export default function ProfilScreen() {
               {altSekme === s.key ? <View style={styles.altSekmeUnderline} /> : null}
             </TouchableOpacity>
           ))}
-        </View>
+        </ScrollView>
 
         {altSekme === 'rezervasyonlar' ? (
           <>
@@ -604,13 +769,303 @@ export default function ProfilScreen() {
             )}
           </View>
         ) : null}
+
+        {altSekme === 'profil-bilgileri' && profil && form ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Profil Bilgileri</Text>
+            {kaydetBasari ? (
+              <View
+                style={{
+                  backgroundColor: '#dcfce7',
+                  borderRadius: 10,
+                  padding: 12,
+                  marginBottom: 12,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 8,
+                }}
+              >
+                <Ionicons name="checkmark-circle" size={18} color="#15803d" />
+                <Text style={{ color: '#15803d', fontWeight: '700', fontSize: 13 }}>
+                  Profiliniz güncellendi!
+                </Text>
+              </View>
+            ) : null}
+            <View style={{ marginBottom: 12 }}>
+              <Text style={styles.profilInputLabel}>Ad</Text>
+              <TextInput
+                style={styles.profilInput}
+                value={form.ad}
+                onChangeText={(t) => setForm({ ...form, ad: t })}
+                autoCapitalize="words"
+                placeholder="Ad"
+              />
+            </View>
+            <View style={{ marginBottom: 12 }}>
+              <Text style={styles.profilInputLabel}>Soyad</Text>
+              <TextInput
+                style={styles.profilInput}
+                value={form.soyad}
+                onChangeText={(t) => setForm({ ...form, soyad: t })}
+                autoCapitalize="words"
+                placeholder="Soyad"
+              />
+            </View>
+            <View style={{ marginBottom: 12 }}>
+              <Text style={styles.profilInputLabel}>Telefon</Text>
+              <TextInput
+                style={styles.profilInput}
+                value={form.telefon}
+                onChangeText={(t) => setForm({ ...form, telefon: t })}
+                keyboardType="phone-pad"
+                placeholder="Telefon"
+              />
+            </View>
+            <View style={{ marginBottom: 12 }}>
+              <Text style={styles.profilInputLabel}>E-posta</Text>
+              <TextInput
+                style={[styles.profilInput, styles.profilInputDisabled]}
+                value={form.email}
+                editable={false}
+                placeholder="E-posta"
+              />
+            </View>
+            <View style={{ marginBottom: 12 }}>
+              <Text style={styles.profilInputLabel}>Doğum Tarihi</Text>
+              <TextInput
+                style={styles.profilInput}
+                value={form.dogumTarihi ?? ''}
+                onChangeText={(t) => setForm({ ...form, dogumTarihi: t })}
+                placeholder="GG.AA.YYYY"
+              />
+            </View>
+            <View style={{ marginBottom: 16 }}>
+              <Text style={styles.profilInputLabel}>Şehir</Text>
+              <TextInput
+                style={styles.profilInput}
+                value={form.sehir}
+                onChangeText={(t) => setForm({ ...form, sehir: t })}
+                autoCapitalize="words"
+                placeholder="Şehir"
+              />
+            </View>
+            <TouchableOpacity
+              style={styles.btnProfilKaydet}
+              activeOpacity={0.85}
+              onPress={() => void handleKaydetProfil()}
+            >
+              <Text style={styles.btnProfilKaydetText}>Değişiklikleri Kaydet</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
+        {altSekme === 'bildirimler' ? (
+          <View style={styles.card}>
+            {bildirimlerYukleniyor ? (
+              <ActivityIndicator size="small" color="#0ABAB5" style={{ paddingVertical: 16 }} />
+            ) : bildirimler.length === 0 ? (
+              <Text style={styles.bosListe}>Henüz bildiriminiz yok.</Text>
+            ) : (
+              bildirimler.map((item: any) => (
+                <View
+                  key={item.id}
+                  style={[
+                    styles.bildirimCard,
+                    item.okundu === false ? styles.bildirimCardOkunmadi : null,
+                  ]}
+                >
+                  <Text style={styles.bildirimBaslik}>{item.baslik ?? ''}</Text>
+                  <Text style={styles.bildirimMesaj}>{item.mesaj ?? ''}</Text>
+                  <Text style={styles.bildirimTarih}>
+                    {item.created_at
+                      ? new Date(item.created_at).toLocaleDateString('tr-TR')
+                      : ''}
+                  </Text>
+                </View>
+              ))
+            )}
+          </View>
+        ) : null}
+
+        {altSekme === 'guvenlik' ? (
+          <View style={styles.guvenlikSection}>
+            <Text style={styles.guvenlikPageTitle}>Güvenlik</Text>
+
+            <View style={styles.guvenlikKart}>
+              <View style={styles.guvenlikKartRow}>
+                <View style={styles.guvenlikKartSol}>
+                  <Ionicons name="lock-closed-outline" size={22} color="#0A1628" />
+                  <View style={styles.guvenlikKartMetin}>
+                    <Text style={styles.guvenlikKartTitle}>Parola</Text>
+                    <Text style={styles.guvenlikKartSub}>Hesabınızı koruyun</Text>
+                  </View>
+                </View>
+                <TouchableOpacity
+                  style={styles.guvenlikBtnOutline}
+                  activeOpacity={0.85}
+                  onPress={() => setModalParola(true)}
+                >
+                  <Text style={styles.guvenlikBtnOutlineText}>Parolayı Değiştir</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.guvenlikKart}>
+              <View style={styles.guvenlikKartRow}>
+                <View style={styles.guvenlikKartSol}>
+                  <Ionicons name="notifications-outline" size={22} color="#0A1628" />
+                  <View style={styles.guvenlikKartMetin}>
+                    <Text style={styles.guvenlikKartTitle}>E-posta Bildirimleri</Text>
+                    <Text style={styles.guvenlikKartSub}>Rezervasyon ve kampanya bildirimleri</Text>
+                  </View>
+                </View>
+                <Switch
+                  value={epostaBildirim}
+                  onValueChange={setEpostaBildirim}
+                  trackColor={{ false: '#cbd5e1', true: '#99f6e4' }}
+                  thumbColor={epostaBildirim ? '#0ABAB5' : '#f4f4f5'}
+                />
+              </View>
+            </View>
+
+            <View style={[styles.guvenlikKart, { marginBottom: 0 }]}>
+              <View style={styles.guvenlikKartRow}>
+                <View style={styles.guvenlikKartSol}>
+                  <Ionicons name="document-text-outline" size={22} color="#0A1628" />
+                  <View style={styles.guvenlikKartMetin}>
+                    <Text style={styles.guvenlikKartTitle}>Veri ve Gizlilik</Text>
+                    <Text style={styles.guvenlikKartSub}>KVKK kapsamında verilerinizi yönetin</Text>
+                  </View>
+                </View>
+                <TouchableOpacity
+                  style={styles.guvenlikBtnOutline}
+                  activeOpacity={0.85}
+                  onPress={() => setModalKvkk(true)}
+                >
+                  <Text style={styles.guvenlikBtnOutlineText}>Görüntüle</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        ) : null}
       </ScrollView>
+
+      <Modal
+        visible={modalParola}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setModalParola(false)}
+      >
+        <View style={styles.guvenlikModalBackdrop}>
+          <View style={styles.guvenlikModalCard}>
+            <Text style={styles.guvenlikModalTitle}>Parola değiştir</Text>
+            <Text style={styles.guvenlikModalLabel}>Mevcut Parola</Text>
+            <TextInput
+              style={styles.guvenlikModalInput}
+              secureTextEntry
+              value={mevcutParola}
+              onChangeText={setMevcutParola}
+              placeholder="Mevcut parola"
+            />
+            <Text style={styles.guvenlikModalLabel}>Yeni Parola</Text>
+            <TextInput
+              style={styles.guvenlikModalInput}
+              secureTextEntry
+              value={yeniParola}
+              onChangeText={setYeniParola}
+              placeholder="Yeni parola"
+            />
+            <Text style={styles.guvenlikModalLabel}>Yeni Parola (Tekrar)</Text>
+            <TextInput
+              style={styles.guvenlikModalInput}
+              secureTextEntry
+              value={yeniParolaTekrar}
+              onChangeText={setYeniParolaTekrar}
+              placeholder="Yeni parola tekrar"
+            />
+            <View style={styles.guvenlikModalBtnRow}>
+              <TouchableOpacity
+                style={styles.guvenlikModalBtnIptal}
+                activeOpacity={0.85}
+                onPress={() => {
+                  setModalParola(false)
+                  setMevcutParola('')
+                  setYeniParola('')
+                  setYeniParolaTekrar('')
+                }}
+              >
+                <Text style={styles.guvenlikModalBtnIptalText}>İptal</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.guvenlikModalBtnKaydet}
+                activeOpacity={0.85}
+                onPress={() => void handleParolaDegistir()}
+              >
+                <Text style={styles.guvenlikModalBtnKaydetText}>Değiştir</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={modalKvkk}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setModalKvkk(false)}
+      >
+        <View style={styles.guvenlikModalBackdrop}>
+          <View style={styles.guvenlikModalCard}>
+            <Text style={styles.guvenlikModalTitle}>Kişisel verilerin korunması</Text>
+            <ScrollView style={styles.guvenlikKvkkScroll} showsVerticalScrollIndicator={false}>
+              <Text style={styles.guvenlikKvkkBody}>
+                6698 sayılı Kişisel Verilerin Korunması Kanunu (KVKK) kapsamında, kişisel verileriniz
+                yalnızca belirtilen amaçlar doğrultusunda işlenir; güvenli şekilde saklanır ve
+                yasal süre boyunca muhafaza edilir. Verilerinize erişim, düzeltme ve silme
+                taleplerinizi veri sorumlusuna iletebilirsiniz.
+              </Text>
+            </ScrollView>
+            <TouchableOpacity
+              style={[styles.guvenlikModalBtnKaydet, { alignSelf: 'stretch' }]}
+              activeOpacity={0.85}
+              onPress={() => setModalKvkk(false)}
+            >
+              <Text style={styles.guvenlikModalBtnKaydetText}>Kapat</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   )
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#f1f5f9' },
+  safeRelative: { position: 'relative' },
+  successToast: {
+    position: 'absolute',
+    top: 16,
+    left: 16,
+    right: 16,
+    zIndex: 999,
+    backgroundColor: '#22c55e',
+    borderRadius: 12,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 8,
+  },
+  successToastText: {
+    flex: 1,
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 15,
+  },
   loadingWrap: { justifyContent: 'center', alignItems: 'center' },
   scroll: { flex: 1 },
   scrollContent: { paddingBottom: 32 },
@@ -696,6 +1151,32 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   cardTitle: { fontSize: 16, fontWeight: '800', color: '#0A1628', marginBottom: 12 },
+  profilInputLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748b',
+    marginBottom: 4,
+  },
+  profilInput: {
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    padding: 14,
+    fontSize: 14,
+    color: '#0A1628',
+  },
+  profilInputDisabled: {
+    opacity: 0.85,
+  },
+  btnProfilKaydet: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f97316',
+    borderRadius: 12,
+    paddingVertical: 14,
+  },
+  btnProfilKaydetText: { color: '#fff', fontWeight: '800', fontSize: 15 },
   qrBtnRow: { flexDirection: 'row', gap: 10 },
   btnQrOku: {
     flex: 1,
@@ -730,16 +1211,21 @@ const styles = StyleSheet.create({
   },
   btnRezYapText: { color: '#fff', fontWeight: '800', fontSize: 15 },
   altSekmeBar: {
-    flexDirection: 'row',
     marginHorizontal: 12,
     marginTop: 8,
     backgroundColor: '#fff',
     borderRadius: 12,
     paddingVertical: 4,
-    paddingHorizontal: 4,
   },
-  altSekmeItem: { flex: 1, alignItems: 'center', paddingVertical: 10 },
-  altSekmeText: { fontSize: 12, fontWeight: '600', color: '#94a3b8' },
+  altSekmeBarContent: {
+    paddingHorizontal: 16,
+    paddingRight: 40,
+    gap: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  altSekmeItem: { flexShrink: 0, alignItems: 'center', paddingVertical: 10 },
+  altSekmeText: { fontSize: 12, fontWeight: '600', color: '#94a3b8', flexShrink: 0 },
   altSekmeTextActive: { color: '#0ABAB5', fontWeight: '800' },
   altSekmeUnderline: {
     marginTop: 6,
@@ -759,6 +1245,119 @@ const styles = StyleSheet.create({
   filtreChipText: { fontSize: 12, fontWeight: '600', color: '#64748b' },
   filtreChipTextActive: { color: '#0d9488', fontWeight: '700' },
   bosListe: { fontSize: 14, color: '#94a3b8', textAlign: 'center', paddingVertical: 16 },
+  bildirimCard: {
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#e2e8f0',
+  },
+  bildirimCardOkunmadi: {
+    borderLeftWidth: 4,
+    borderLeftColor: '#2563eb',
+    paddingLeft: 10,
+  },
+  bildirimBaslik: { fontSize: 16, fontWeight: '800', color: '#0A1628' },
+  bildirimMesaj: { fontSize: 14, color: '#64748b', marginTop: 4, lineHeight: 20 },
+  bildirimTarih: { fontSize: 12, color: '#94a3b8', marginTop: 8 },
+  guvenlikSection: {
+    backgroundColor: '#f5f5f5',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginTop: 4,
+  },
+  guvenlikPageTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0A1628',
+    marginBottom: 12,
+  },
+  guvenlikKart: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  guvenlikKartRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  guvenlikKartSol: { flexDirection: 'row', alignItems: 'center', flex: 1, minWidth: 0 },
+  guvenlikKartMetin: { marginLeft: 12, flex: 1, minWidth: 0 },
+  guvenlikKartTitle: { fontSize: 15, fontWeight: '700', color: '#0A1628' },
+  guvenlikKartSub: { fontSize: 12, color: '#64748b', marginTop: 2 },
+  guvenlikBtnOutline: {
+    borderWidth: 1.5,
+    borderColor: '#0A1628',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    flexShrink: 0,
+  },
+  guvenlikBtnOutlineText: { fontSize: 12, fontWeight: '700', color: '#0A1628' },
+  guvenlikModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  guvenlikModalCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    maxHeight: '90%',
+  },
+  guvenlikModalTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#0A1628',
+    marginBottom: 16,
+  },
+  guvenlikModalLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748b',
+    marginBottom: 6,
+    marginTop: 8,
+  },
+  guvenlikModalInput: {
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 10,
+    padding: 12,
+    fontSize: 14,
+    color: '#0A1628',
+  },
+  guvenlikModalBtnRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 20,
+    justifyContent: 'flex-end',
+  },
+  guvenlikModalBtnIptal: {
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#94a3b8',
+  },
+  guvenlikModalBtnIptalText: { fontSize: 14, fontWeight: '700', color: '#64748b' },
+  guvenlikModalBtnKaydet: {
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 10,
+    backgroundColor: '#0ABAB5',
+    alignItems: 'center',
+  },
+  guvenlikModalBtnKaydetText: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  guvenlikKvkkScroll: { maxHeight: 220, marginBottom: 16 },
+  guvenlikKvkkBody: { fontSize: 14, color: '#475569', lineHeight: 22 },
   rezWebCard: {
     padding: 16,
     marginBottom: 10,
