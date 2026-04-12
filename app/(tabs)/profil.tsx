@@ -226,7 +226,7 @@ export default function ProfilScreen() {
 
         const { data: favData } = await supabase
           .from('favoriler')
-          .select('id, tesis_id, created_at, tesisler(ad, fotograflar)')
+          .select('id, tesis_id, created_at, tesisler(ad, fotograflar, slug)')
           .eq('kullanici_id', data.id)
           .order('created_at', { ascending: false })
         if (favData) setFavoriler(favData)
@@ -505,27 +505,46 @@ export default function ProfilScreen() {
             {yorumlar.length === 0 ? (
               <Text style={styles.bosListe}>Henüz yorum yapmadınız</Text>
             ) : (
-              yorumlar.map((r: any) => (
-                <View key={r.id} style={styles.rezCard}>
-                  <View style={styles.rezBody}>
-                    <Text style={styles.rezTesisAd}>{r.tesisler?.ad ?? 'Tesis'}</Text>
-                    <View style={{ flexDirection: 'row', marginTop: 4 }}>
-                      {[1, 2, 3, 4, 5].map((i) => (
-                        <Text
-                          key={i}
-                          style={{ color: i <= (r.puan ?? 0) ? '#f59e0b' : '#cbd5e1', fontSize: 16 }}
-                        >
-                          ★
+              yorumlar.map((r: any) => {
+                let yorumDurumBadge: { bg: string; fg: string; label: string } | null = null
+                if (r.durum === 'onaylı') {
+                  yorumDurumBadge = { bg: '#dcfce7', fg: '#15803d', label: 'Onaylı' }
+                } else if (r.durum === 'bekliyor') {
+                  yorumDurumBadge = { bg: '#fef3c7', fg: '#b45309', label: 'Beklemede' }
+                } else if (r.durum === 'reddedildi') {
+                  yorumDurumBadge = { bg: '#fee2e2', fg: '#dc2626', label: 'Reddedildi' }
+                }
+                return (
+                  <View key={r.id} style={[styles.rezCard, { position: 'relative' }]}>
+                    {yorumDurumBadge ? (
+                      <View
+                        style={[styles.yorumDurumBadge, { backgroundColor: yorumDurumBadge.bg }]}
+                      >
+                        <Text style={[styles.yorumDurumBadgeText, { color: yorumDurumBadge.fg }]}>
+                          {yorumDurumBadge.label}
                         </Text>
-                      ))}
+                      </View>
+                    ) : null}
+                    <View style={styles.rezBody}>
+                      <Text style={styles.rezTesisAd}>{r.tesisler?.ad ?? 'Tesis'}</Text>
+                      <View style={{ flexDirection: 'row', marginTop: 4 }}>
+                        {[1, 2, 3, 4, 5].map((i) => (
+                          <Text
+                            key={i}
+                            style={{ color: i <= (r.puan ?? 0) ? '#f59e0b' : '#cbd5e1', fontSize: 16 }}
+                          >
+                            ★
+                          </Text>
+                        ))}
+                      </View>
+                      <Text style={[styles.rezMeta, { marginTop: 6, color: '#374151', fontSize: 13 }]}>
+                        {r.yorum}
+                      </Text>
+                      <Text style={[styles.rezMeta, { marginTop: 4 }]}>{r.created_at?.slice(0, 10)}</Text>
                     </View>
-                    <Text style={[styles.rezMeta, { marginTop: 6, color: '#374151', fontSize: 13 }]}>
-                      {r.yorum}
-                    </Text>
-                    <Text style={[styles.rezMeta, { marginTop: 4 }]}>{r.created_at?.slice(0, 10)}</Text>
                   </View>
-                </View>
-              ))
+                )
+              })
             )}
           </View>
         ) : null}
@@ -566,8 +585,16 @@ export default function ProfilScreen() {
                     <Text style={styles.rezTesisAd}>{r.tesisler?.ad ?? 'Tesis'}</Text>
                     <Text style={styles.rezMeta}>Favorilere eklendi: {r.created_at?.slice(0, 10)}</Text>
                     <TouchableOpacity
-                      style={[styles.btnTesiseGit, { marginTop: 10, alignSelf: 'flex-start', paddingHorizontal: 20 }]}
+                      style={{
+                        backgroundColor: '#f97316',
+                        borderRadius: 10,
+                        paddingHorizontal: 12,
+                        paddingVertical: 6,
+                        alignSelf: 'flex-start',
+                        marginTop: 8,
+                      }}
                       activeOpacity={0.85}
+                      onPress={() => router.push(`/tesis/${r.tesisler?.slug}`)}
                     >
                       <Text style={styles.btnTesiseGitText}>Şezlong Seç →</Text>
                     </TouchableOpacity>
@@ -808,6 +835,19 @@ const styles = StyleSheet.create({
     padding: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#e2e8f0',
+  },
+  yorumDurumBadge: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    zIndex: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 20,
+  },
+  yorumDurumBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
   favCard: {
     flexDirection: 'row',

@@ -1818,7 +1818,7 @@ export default function TesisDetailScreen() {
             accessibilityRole="button"
             accessibilityLabel="Geri Dön"
           >
-            <Ionicons name="arrow-back-outline" size={18} color="#334155" />
+            <Ionicons name="arrow-back-outline" size={18} color="#fff" />
             <Text style={styles.stickyBackBtnText}>Geri Dön</Text>
           </TouchableOpacity>
           {row.telefon?.trim() ? (
@@ -1831,7 +1831,7 @@ export default function TesisDetailScreen() {
               accessibilityRole="button"
               accessibilityLabel="Tesisi Ara"
             >
-              <Ionicons name="call-outline" size={18} color="#0d9488" />
+              <Ionicons name="call-outline" size={18} color="#fff" />
               <Text style={styles.stickyCallBtnText}>Tesisi Ara</Text>
             </TouchableOpacity>
           ) : null}
@@ -1925,48 +1925,41 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 10,
   },
-  stickyBarRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  stickyBarRow: { flexDirection: 'row', alignItems: 'stretch', gap: 8 },
   stickyBackBtn: {
     flex: 1,
-    height: 48,
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 2,
-    backgroundColor: '#f1f5f9',
-    borderRadius: 24,
+    backgroundColor: '#0A1628',
+    borderRadius: 12,
+    paddingVertical: 12,
     paddingHorizontal: 4,
   },
-  stickyBackBtnText: { fontSize: 10, fontWeight: '600', color: '#334155' },
+  stickyBackBtnText: { fontSize: 13, fontWeight: '700', color: '#fff' },
   stickyCallBtn: {
     flex: 1,
-    height: 48,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 5,
-    backgroundColor: '#fff',
-    borderWidth: 1.5,
-    borderColor: '#0d9488',
-    borderRadius: 24,
+    backgroundColor: '#0ABAB5',
+    borderRadius: 12,
+    paddingVertical: 12,
     paddingHorizontal: 8,
   },
-  stickyCallBtnText: { fontSize: 12, fontWeight: '700', color: '#0d9488' },
+  stickyCallBtnText: { fontSize: 13, fontWeight: '700', color: '#fff' },
   stickyReserveBtn: {
-    flex: 2,
-    height: 48,
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#0d9488',
-    borderRadius: 14,
+    backgroundColor: '#f97316',
+    borderRadius: 12,
+    paddingVertical: 12,
     paddingHorizontal: 10,
-    shadowColor: '#0d9488',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.35,
-    shadowRadius: 5,
-    elevation: 5,
   },
-  stickyReserveBtnText: { color: '#fff', fontWeight: '800', fontSize: 14 },
+  stickyReserveBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
   regionModalRoot: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   regionModalSafe: { maxHeight: '85%', backgroundColor: '#fff', borderTopLeftRadius: 16, borderTopRightRadius: 16 },
   calendarNavRow: {
