@@ -855,35 +855,37 @@ export default function TesisDetailScreen() {
           ) : null}
 
           {gruplar.length > 0 && (
-            <View style={[styles.card, { backgroundColor: '#0d9488' }]}>
-              <TouchableOpacity
-                onPress={() => setAcikPlan(!acikPlan)}
-                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
-                activeOpacity={0.7}
-              >
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
-                  <View
-                    style={{
-                      width: 36,
-                      height: 36,
-                      borderRadius: 18,
-                      backgroundColor: 'rgba(255,255,255,0.25)',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <Ionicons name="grid-outline" size={18} color="#fff" />
+            <View style={[styles.card, { padding: 0, overflow: 'hidden' }]}>
+              <View style={{ backgroundColor: '#0d9488', padding: 16 }}>
+                <TouchableOpacity
+                  onPress={() => setAcikPlan(!acikPlan)}
+                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+                  activeOpacity={0.7}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                    <View
+                      style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: 18,
+                        backgroundColor: 'rgba(255,255,255,0.25)',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <Ionicons name="grid-outline" size={18} color="#fff" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.sectionTitle, { color: '#fff' }]}>Şezlong Seç</Text>
+                      <Text style={{ fontSize: 11, color: '#fff' }}>Uygun Şezlongu Seçin</Text>
+                    </View>
                   </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.sectionTitle, { color: '#fff' }]}>Şezlong Seç</Text>
-                    <Text style={{ fontSize: 11, color: '#fff' }}>Uygun Şezlongu Seçin</Text>
-                  </View>
-                </View>
-                <Ionicons name={acikPlan ? 'chevron-up' : 'chevron-down'} size={20} color="#fff" />
-              </TouchableOpacity>
+                  <Ionicons name={acikPlan ? 'chevron-up' : 'chevron-down'} size={20} color="#fff" />
+                </TouchableOpacity>
+              </View>
 
               {acikPlan && (
-                <View style={{ marginTop: 12 }}>
+                <View style={{ backgroundColor: '#ffffff', padding: 16 }}>
               <TouchableOpacity
                 onPress={openPlanDatePicker}
                 style={{
