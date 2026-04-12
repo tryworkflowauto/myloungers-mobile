@@ -45,6 +45,12 @@
         {
           "locationAlwaysAndWhenInUsePermission": "Konumunuzu tesis aramasında kullanmamıza izin verin."
         }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "QR kod okutmak için kamera erişimine izin verin."
+        }
       ]
     ],
     "experiments": {

@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons'
+import { CameraView, useCameraPermissions } from 'expo-camera'
 import { useRouter } from 'expo-router'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
@@ -150,6 +151,79 @@ export default function ProfilScreen() {
   const [yeniParola, setYeniParola] = useState('')
   const [yeniParolaTekrar, setYeniParolaTekrar] = useState('')
   const [successMesaj, setSuccessMesaj] = useState('')
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions()
+  const [showQrScanner, setShowQrScanner] = useState(false)
+  const qrHandledRef = useRef(false)
+  const [modalKodGir, setModalKodGir] = useState(false)
+  const [kodInput, setKodInput] = useState('')
+  const [kodHata, setKodHata] = useState('')
+  const [kodGonderiliyor, setKodGonderiliyor] = useState(false)
+
+  const onQrBarcodeScanned = useCallback((result: { data: string }) => {
+    if (qrHandledRef.current) return
+    qrHandledRef.current = true
+    setShowQrScanner(false)
+    if (result?.data) {
+      Alert.alert('QR', result.data)
+    }
+    setTimeout(() => {
+      qrHandledRef.current = false
+    }, 2000)
+  }, [])
+
+  const handleQrOku = async () => {
+    try {
+      if (!cameraPermission?.granted) {
+        const res = await requestCameraPermission()
+        if (!res.granted) {
+          Alert.alert('\u0130zin gerekli', 'QR kod okutmak i\u00e7in kamera eri\u015fimine izin verin.')
+          return
+        }
+      }
+      qrHandledRef.current = false
+      setShowQrScanner(true)
+    } catch {
+      Alert.alert('Yak\u0131nda', 'QR okuyucu yak\u0131nda aktif olacak')
+    }
+  }
+
+  const handleKodOnayla = async () => {
+    const raw = kodInput.trim().toUpperCase()
+    if (!raw) {
+      setKodHata('Ge\u00e7ersiz kod')
+      return
+    }
+    setKodGonderiliyor(true)
+    setKodHata('')
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) {
+        Alert.alert('Hata', 'Oturum bulunamad\u0131.')
+        return
+      }
+      const { data, error } = await supabase
+        .from('rezervasyonlar')
+        .select('*')
+        .eq('rezervasyon_kodu', raw)
+        .eq('kullanici_id', user.id)
+        .single()
+      if (error || !data) {
+        setKodHata('Ge\u00e7ersiz kod')
+        return
+      }
+      setModalKodGir(false)
+      setKodInput('')
+      setKodHata('')
+      setSuccessMesaj('Rezervasyon do\u011fruland\u0131! Ho\u015f geldiniz.')
+      setTimeout(() => setSuccessMesaj(''), 4000)
+    } catch {
+      setKodHata('Ge\u00e7ersiz kod')
+    } finally {
+      setKodGonderiliyor(false)
+    }
+  }
 
   const loadProfil = async () => {
     try {
@@ -507,11 +581,19 @@ export default function ProfilScreen() {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>QR Girişi</Text>
           <View style={styles.qrBtnRow}>
-            <TouchableOpacity style={styles.btnQrOku} activeOpacity={0.85}>
+            <TouchableOpacity style={styles.btnQrOku} activeOpacity={0.85} onPress={() => void handleQrOku()}>
               <Ionicons name="camera-outline" size={22} color="#fff" />
               <Text style={styles.btnQrOkuText}>QR Oku</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.btnKodGir} activeOpacity={0.85}>
+            <TouchableOpacity
+              style={styles.btnKodGir}
+              activeOpacity={0.85}
+              onPress={() => {
+                setKodHata('')
+                setKodInput('')
+                setModalKodGir(true)
+              }}
+            >
               <Ionicons name="keypad-outline" size={22} color="#fff" />
               <Text style={styles.btnKodGirText}>Kod Gir</Text>
             </TouchableOpacity>
@@ -1142,6 +1224,76 @@ export default function ProfilScreen() {
           </View>
         </View>
       </Modal>
+
+      <Modal visible={showQrScanner} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setShowQrScanner(false)}>
+        <View style={{ flex: 1, backgroundColor: '#000' }}>
+          <CameraView
+            style={StyleSheet.absoluteFillObject}
+            facing="back"
+            barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+            onBarcodeScanned={onQrBarcodeScanned}
+          />
+          <View style={{ position: 'absolute', top: 48, right: 16, zIndex: 10 }}>
+            <TouchableOpacity onPress={() => setShowQrScanner(false)} hitSlop={12} accessibilityRole="button">
+              <Ionicons name="close" size={32} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={modalKodGir}
+        animationType="fade"
+        transparent
+        onRequestClose={() => {
+          setModalKodGir(false)
+          setKodInput('')
+          setKodHata('')
+        }}
+      >
+        <View style={styles.kodModalBackdrop}>
+          <View style={styles.kodModalCard}>
+            <Text style={styles.kodModalTitle}>Rezervasyon Kodunuzu Girin</Text>
+            <TextInput
+              style={styles.kodModalInput}
+              value={kodInput}
+              onChangeText={(t) => {
+                setKodInput(t.toUpperCase())
+                if (kodHata) setKodHata('')
+              }}
+              placeholder="KOD"
+              placeholderTextColor="#94a3b8"
+              autoCapitalize="characters"
+              autoCorrect={false}
+              textAlign="center"
+            />
+            {kodHata ? <Text style={styles.kodModalHata}>{kodHata}</Text> : null}
+            <TouchableOpacity
+              style={styles.kodModalOnayla}
+              activeOpacity={0.9}
+              disabled={kodGonderiliyor}
+              onPress={() => void handleKodOnayla()}
+            >
+              {kodGonderiliyor ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.kodModalOnaylaText}>Onayla</Text>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.kodModalIptal}
+              activeOpacity={0.85}
+              onPress={() => {
+                setModalKodGir(false)
+                setKodInput('')
+                setKodHata('')
+              }}
+            >
+              <Text style={styles.kodModalIptalText}>{'\u0130ptal'}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   )
 }
@@ -1608,5 +1760,61 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#fff',
   },
+  kodModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  kodModalCard: {
+    width: '100%',
+    maxWidth: 400,
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  kodModalTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#0f172a',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  kodModalInput: {
+    borderWidth: 1.5,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#0A1628',
+    letterSpacing: 6,
+    backgroundColor: '#f8fafc',
+  },
+  kodModalHata: {
+    marginTop: 10,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#b91c1c',
+    textAlign: 'center',
+  },
+  kodModalOnayla: {
+    marginTop: 20,
+    backgroundColor: '#0ABAB5',
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  kodModalOnaylaText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  kodModalIptal: { marginTop: 14, alignItems: 'center', paddingVertical: 8 },
+  kodModalIptalText: { fontSize: 15, fontWeight: '700', color: '#64748b' },
   placeholderTab: { fontSize: 14, color: '#64748b', textAlign: 'center', paddingVertical: 8 },
 })
