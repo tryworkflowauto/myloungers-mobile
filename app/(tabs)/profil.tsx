@@ -1225,17 +1225,98 @@ export default function ProfilScreen() {
         </View>
       </Modal>
 
-      <Modal visible={showQrScanner} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setShowQrScanner(false)}>
-        <View style={{ flex: 1, backgroundColor: '#000' }}>
+      <Modal
+        visible={showQrScanner}
+        animationType="slide"
+        statusBarTranslucent={true}
+        onRequestClose={() => setShowQrScanner(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: 'black' }}>
           <CameraView
-            style={StyleSheet.absoluteFillObject}
+            style={{ flex: 1 }}
             facing="back"
             barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
             onBarcodeScanned={onQrBarcodeScanned}
           />
-          <View style={{ position: 'absolute', top: 48, right: 16, zIndex: 10 }}>
+          <View
+            pointerEvents="none"
+            style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center' }}
+          >
+            <View
+              style={{
+                position: 'absolute',
+                width: 250,
+                height: 250,
+                alignSelf: 'center',
+                top: '35%',
+              }}
+            >
+              <View
+                style={{
+                  borderTopWidth: 3,
+                  borderLeftWidth: 3,
+                  borderColor: 'white',
+                  width: 40,
+                  height: 40,
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                }}
+              />
+              <View
+                style={{
+                  borderTopWidth: 3,
+                  borderRightWidth: 3,
+                  borderColor: 'white',
+                  width: 40,
+                  height: 40,
+                  position: 'absolute',
+                  top: 0,
+                  right: 0,
+                }}
+              />
+              <View
+                style={{
+                  borderBottomWidth: 3,
+                  borderLeftWidth: 3,
+                  borderColor: 'white',
+                  width: 40,
+                  height: 40,
+                  position: 'absolute',
+                  bottom: 0,
+                  left: 0,
+                }}
+              />
+              <View
+                style={{
+                  borderBottomWidth: 3,
+                  borderRightWidth: 3,
+                  borderColor: 'white',
+                  width: 40,
+                  height: 40,
+                  position: 'absolute',
+                  bottom: 0,
+                  right: 0,
+                }}
+              />
+            </View>
+            <Text
+              style={{
+                position: 'absolute',
+                left: 16,
+                right: 16,
+                top: '35%',
+                marginTop: 266,
+                color: 'white',
+                textAlign: 'center',
+              }}
+            >
+              {'QR kodu \u00e7er\u00e7eve i\u00e7ine al\u0131n'}
+            </Text>
+          </View>
+          <View style={{ position: 'absolute', top: 50, left: 20, zIndex: 999 }}>
             <TouchableOpacity onPress={() => setShowQrScanner(false)} hitSlop={12} accessibilityRole="button">
-              <Ionicons name="close" size={32} color="#fff" />
+              <Ionicons name="close" size={32} color="white" />
             </TouchableOpacity>
           </View>
         </View>
