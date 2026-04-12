@@ -151,6 +151,7 @@ export default function ProfilScreen() {
   const [yeniParola, setYeniParola] = useState('')
   const [yeniParolaTekrar, setYeniParolaTekrar] = useState('')
   const [successMesaj, setSuccessMesaj] = useState('')
+  const [dogrulandiId, setDogrulandiId] = useState<string | null>(null)
   const [cameraPermission, requestCameraPermission] = useCameraPermissions()
   const [showQrScanner, setShowQrScanner] = useState(false)
   const qrHandledRef = useRef(false)
@@ -217,6 +218,7 @@ export default function ProfilScreen() {
         return
       }
 
+      setDogrulandiId(aktifSezlonglar[0]?.id ?? null)
       setSuccessMesaj('Rezervasyon do\u011fruland\u0131! Ho\u015f geldiniz.')
       setTimeout(() => setSuccessMesaj(''), 3000)
       setModalKodGir(false)
@@ -272,6 +274,7 @@ export default function ProfilScreen() {
             'id, baslangic_tarih, bitis_tarih, sezlong_id, toplam_tutar, durum, tesis_id, rezervasyon_kodu, tesisler(ad, fotograflar, sehir, kategori, slug), sezlonglar(numara, grup_id, sezlong_gruplari(ad))',
           )
           .eq('kullanici_id', data.id)
+          .in('durum', ['onaylandi', 'iptal', 'iptal_edildi'])
           .order('baslangic_tarih', { ascending: false })
 
         console.log('REZ DATA:', rezData)
@@ -312,20 +315,28 @@ export default function ProfilScreen() {
                 kategoriLabel = String(r.tesisler?.kategori ?? '')
               }
 
-              const baslangic = r.baslangic_tarih ? new Date(r.baslangic_tarih) : null
-              const bitis = r.bitis_tarih ? new Date(r.bitis_tarih) : null
+              const baslangicRaw = r.baslangic_tarih ? new Date(r.baslangic_tarih) : null
+              const bitisRaw = r.bitis_tarih ? new Date(r.bitis_tarih) : null
               const bugun = new Date()
               bugun.setHours(0, 0, 0, 0)
+              const baslangic = baslangicRaw ? new Date(baslangicRaw) : null
+              if (baslangic) baslangic.setHours(0, 0, 0, 0)
+              const bitis = bitisRaw ? new Date(bitisRaw) : null
+              if (bitis) bitis.setHours(0, 0, 0, 0)
 
               let rezDurum: RezDurum = 'gecmis'
-              if (r.durum === 'iptal') {
+              if (r.durum === 'iptal' || r.durum === 'iptal_edildi') {
                 rezDurum = 'iptal'
-              } else if (baslangic && baslangic > bugun) {
-                rezDurum = 'yaklasan'
-              } else if (baslangic && bitis && baslangic <= bugun && bitis >= bugun) {
-                rezDurum = 'aktif'
-              } else {
-                rezDurum = 'gecmis'
+              } else if (r.durum === 'onaylandi') {
+                if (baslangic && bitis && baslangic <= bugun && bitis >= bugun) {
+                  rezDurum = 'aktif'
+                } else if (baslangic && baslangic > bugun) {
+                  rezDurum = 'yaklasan'
+                } else if (bitis && bitis < bugun) {
+                  rezDurum = 'gecmis'
+                } else {
+                  rezDurum = 'gecmis'
+                }
               }
 
               return {
@@ -631,9 +642,6 @@ export default function ProfilScreen() {
                   : typeof r.sure === 'string' && String(r.sure).trim() !== ''
                     ? `${String(r.sure).trim()} gün`
                     : aktifSezlongSureStr(r)
-              const sezlongTam = sezlongMap[r.sezlong_id] ?? ''
-              const sezlongNo = sezlongTam.split(' - ')[1] ?? sezlongTam
-              const rezKodu = r.rezervasyon_kodu ?? `MYL-${sezlongNo}`
               return (
                 <View
                   key={r.id}
@@ -666,15 +674,35 @@ export default function ProfilScreen() {
                       )}
                     </View>
                     <View style={{ flex: 1 }}>
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Text
-                          style={{ fontSize: 15, fontWeight: '800', color: '#0f172a', flex: 1, marginRight: 8 }}
-                          numberOfLines={1}
-                        >
-                          {r.tesisler?.ad ?? 'Tesis'}
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <Text style={{ fontWeight: 'bold', fontSize: 15, flex: 1 }} numberOfLines={1}>
+                          {r.tesisler?.ad}
                         </Text>
+                      </View>
+                      <View
+                        style={{
+                          flexDirection: 'row',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          marginTop: 2,
+                        }}
+                      >
+                        {dogrulandiId === r.id ? (
+                          <View
+                            style={{
+                              backgroundColor: '#22c55e',
+                              borderRadius: 6,
+                              paddingHorizontal: 8,
+                              paddingVertical: 2,
+                            }}
+                          >
+                            <Text style={{ color: 'white', fontSize: 11, fontWeight: 'bold' }}>Aktif</Text>
+                          </View>
+                        ) : (
+                          <View />
+                        )}
                         <Text style={{ fontSize: 12, color: '#0d9488', fontWeight: 'bold' }}>
-                          {rezKodu}
+                          {r.rezervasyon_kodu ?? ''}
                         </Text>
                       </View>
                       <Text style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>
