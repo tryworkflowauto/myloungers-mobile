@@ -1,22 +1,23 @@
+import { supabase } from '@/lib/supabase'
 import { Ionicons } from '@expo/vector-icons'
 import { CameraView, useCameraPermissions } from 'expo-camera'
+import { LinearGradient } from 'expo-linear-gradient'
 import { useRouter } from 'expo-router'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ActivityIndicator,
-  Alert,
-  Image,
-  Modal,
-  ScrollView,
-  StyleSheet,
-  Switch,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    Image,
+    Modal,
+    ScrollView,
+    StyleSheet,
+    Switch,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { supabase } from '@/lib/supabase'
 
 type RezDurum = 'yaklasan' | 'aktif' | 'gecmis' | 'iptal'
 
@@ -143,6 +144,9 @@ export default function ProfilScreen() {
   const [kaydetBasari, setKaydetBasari] = useState(false)
   const [bildirimler, setBildirimler] = useState<any[]>([])
   const [bildirimlerYukleniyor, setBildirimlerYukleniyor] = useState(false)
+  const [modalAyarlar, setModalAyarlar] = useState(false)
+  const [accordionProfil, setAccordionProfil] = useState(false)
+  const [accordionGuvenlik, setAccordionGuvenlik] = useState(false)
   const [aktifSezlonglar, setAktifSezlonglar] = useState<any[]>([])
   const [sezlongMap, setSezlongMap] = useState<Record<string, string>>({})
   const [epostaBildirim, setEpostaBildirim] = useState(true)
@@ -493,6 +497,8 @@ export default function ProfilScreen() {
       telefon: form.telefon.trim(),
       sehir: form.sehir.trim(),
     })
+    setSuccessMesaj('✓ Profiliniz güncellendi')
+    setTimeout(() => setSuccessMesaj(''), 2500)
     setKaydetBasari(true)
     setTimeout(() => setKaydetBasari(false), 2000)
   }
@@ -530,8 +536,8 @@ export default function ProfilScreen() {
     setYeniParola('')
     setYeniParolaTekrar('')
     setModalParola(false)
-    setSuccessMesaj('Parola ba\u015far\u0131yla g\u00fcncellendi')
-    setTimeout(() => setSuccessMesaj(''), 3000)
+    setSuccessMesaj('✓ Parolanız güncellendi')
+    setTimeout(() => setSuccessMesaj(''), 2500)
   }
 
   if (loading) {
@@ -558,7 +564,12 @@ export default function ProfilScreen() {
       >
         <View style={styles.header}>
           <View style={styles.headerTopRow}>
-            <TouchableOpacity style={styles.headerIconBtn} hitSlop={12} activeOpacity={0.8}>
+            <TouchableOpacity
+              style={styles.headerIconBtn}
+              hitSlop={12}
+              activeOpacity={0.8}
+              onPress={() => setModalAyarlar(true)}
+            >
               <Ionicons name="settings-outline" size={24} color="#fff" />
             </TouchableOpacity>
             <TouchableOpacity
@@ -575,6 +586,7 @@ export default function ProfilScreen() {
               <Text style={styles.avatarText}>{avatarHarf}</Text>
             </View>
           </View>
+          <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.75)', fontWeight: '600', textAlign: 'center', marginTop: 12, letterSpacing: 1 }}>HOŞ GELDİN</Text>
           <Text style={styles.userName}>
             {profil ? `${profil.ad} ${profil.soyad}`.trim() : ''}
           </Text>
@@ -592,22 +604,55 @@ export default function ProfilScreen() {
             </View>
           </View>
           <Text style={styles.uyeEtiket}>Üye: {profil?.uyeAyYil ?? ''}</Text>
-          <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 32, marginTop: 16 }}>
-            <View style={{ alignItems: 'center' }}>
-              <Text style={{ fontSize: 22, fontWeight: '900', color: '#fff' }}>{rezervasyonlar.length}</Text>
-              <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 2 }}>Rezervasyon</Text>
+        </View>
+
+        <View
+          style={{
+            marginHorizontal: 16,
+            marginTop: -24,
+            borderRadius: 20,
+            overflow: 'hidden',
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.15,
+            shadowRadius: 12,
+            elevation: 6,
+          }}
+        >
+          <LinearGradient
+            colors={['#0A1628', '#1e3a5f']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={{ flexDirection: 'row', padding: 20, gap: 0 }}
+          >
+            <View
+              style={{
+                flex: 1,
+                alignItems: 'center',
+                borderRightWidth: 1,
+                borderRightColor: 'rgba(255,255,255,0.25)',
+                paddingRight: 16,
+              }}
+            >
+              <Ionicons name="umbrella-outline" size={24} color="rgba(255,255,255,0.85)" />
+              <Text style={{ fontSize: 28, fontWeight: '900', color: '#fff', marginTop: 6 }}>
+                {rezervasyonlar.length}
+              </Text>
+              <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', marginTop: 2, fontWeight: '600' }}>
+                Rezervasyon
+              </Text>
             </View>
-            <View style={{ width: 1, backgroundColor: 'rgba(255,255,255,0.2)' }} />
-            <View style={{ alignItems: 'center' }}>
-              <Text style={{ fontSize: 22, fontWeight: '900', color: '#fff' }}>
+            <View style={{ flex: 1, alignItems: 'center', paddingLeft: 16 }}>
+              <Ionicons name="wallet-outline" size={24} color="rgba(255,255,255,0.85)" />
+              <Text style={{ fontSize: 28, fontWeight: '900', color: '#fff', marginTop: 6 }}>
                 {'\u20BA'}
                 {toplamHarcama.toLocaleString('tr-TR')}
               </Text>
-              <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 2 }}>
+              <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', marginTop: 2, fontWeight: '600' }}>
                 Toplam Harcama
               </Text>
             </View>
-          </View>
+          </LinearGradient>
         </View>
 
         <View style={styles.card}>
@@ -767,8 +812,6 @@ export default function ProfilScreen() {
               { key: 'yorumlar' as const, label: 'Yorumlarım' },
               { key: 'favoriler' as const, label: 'Favorilerim' },
               { key: 'bildirimler' as const, label: 'Bildirimler' },
-              { key: 'guvenlik' as const, label: 'Güvenlik' },
-              { key: 'profil-bilgileri' as const, label: 'Profilim' },
             ] as const
           ).map((s) => (
             <TouchableOpacity
@@ -1019,95 +1062,6 @@ export default function ProfilScreen() {
           </View>
         ) : null}
 
-        {altSekme === 'profil-bilgileri' && profil && form ? (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Profil Bilgileri</Text>
-            {kaydetBasari ? (
-              <View
-                style={{
-                  backgroundColor: '#dcfce7',
-                  borderRadius: 10,
-                  padding: 12,
-                  marginBottom: 12,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 8,
-                }}
-              >
-                <Ionicons name="checkmark-circle" size={18} color="#15803d" />
-                <Text style={{ color: '#15803d', fontWeight: '700', fontSize: 13 }}>
-                  Profiliniz güncellendi!
-                </Text>
-              </View>
-            ) : null}
-            <View style={{ marginBottom: 12 }}>
-              <Text style={styles.profilInputLabel}>Ad</Text>
-              <TextInput
-                style={styles.profilInput}
-                value={form.ad}
-                onChangeText={(t) => setForm({ ...form, ad: t })}
-                autoCapitalize="words"
-                placeholder="Ad"
-              />
-            </View>
-            <View style={{ marginBottom: 12 }}>
-              <Text style={styles.profilInputLabel}>Soyad</Text>
-              <TextInput
-                style={styles.profilInput}
-                value={form.soyad}
-                onChangeText={(t) => setForm({ ...form, soyad: t })}
-                autoCapitalize="words"
-                placeholder="Soyad"
-              />
-            </View>
-            <View style={{ marginBottom: 12 }}>
-              <Text style={styles.profilInputLabel}>Telefon</Text>
-              <TextInput
-                style={styles.profilInput}
-                value={form.telefon}
-                onChangeText={(t) => setForm({ ...form, telefon: t })}
-                keyboardType="phone-pad"
-                placeholder="Telefon"
-              />
-            </View>
-            <View style={{ marginBottom: 12 }}>
-              <Text style={styles.profilInputLabel}>E-posta</Text>
-              <TextInput
-                style={[styles.profilInput, styles.profilInputDisabled]}
-                value={form.email}
-                editable={false}
-                placeholder="E-posta"
-              />
-            </View>
-            <View style={{ marginBottom: 12 }}>
-              <Text style={styles.profilInputLabel}>Doğum Tarihi</Text>
-              <TextInput
-                style={styles.profilInput}
-                value={form.dogumTarihi ?? ''}
-                onChangeText={(t) => setForm({ ...form, dogumTarihi: t })}
-                placeholder="GG.AA.YYYY"
-              />
-            </View>
-            <View style={{ marginBottom: 16 }}>
-              <Text style={styles.profilInputLabel}>Şehir</Text>
-              <TextInput
-                style={styles.profilInput}
-                value={form.sehir}
-                onChangeText={(t) => setForm({ ...form, sehir: t })}
-                autoCapitalize="words"
-                placeholder="Şehir"
-              />
-            </View>
-            <TouchableOpacity
-              style={styles.btnProfilKaydet}
-              activeOpacity={0.85}
-              onPress={() => void handleKaydetProfil()}
-            >
-              <Text style={styles.btnProfilKaydetText}>Değişiklikleri Kaydet</Text>
-            </TouchableOpacity>
-          </View>
-        ) : null}
-
         {altSekme === 'bildirimler' ? (
           <View style={styles.card}>
             {bildirimlerYukleniyor ? (
@@ -1136,68 +1090,220 @@ export default function ProfilScreen() {
           </View>
         ) : null}
 
-        {altSekme === 'guvenlik' ? (
-          <View style={styles.guvenlikSection}>
-            <Text style={styles.guvenlikPageTitle}>Güvenlik</Text>
-
-            <View style={styles.guvenlikKart}>
-              <View style={styles.guvenlikKartRow}>
-                <View style={styles.guvenlikKartSol}>
-                  <Ionicons name="lock-closed-outline" size={22} color="#0A1628" />
-                  <View style={styles.guvenlikKartMetin}>
-                    <Text style={styles.guvenlikKartTitle}>Parola</Text>
-                    <Text style={styles.guvenlikKartSub}>Hesabınızı koruyun</Text>
-                  </View>
-                </View>
-                <TouchableOpacity
-                  style={styles.guvenlikBtnOutline}
-                  activeOpacity={0.85}
-                  onPress={() => setModalParola(true)}
-                >
-                  <Text style={styles.guvenlikBtnOutlineText}>Parolayı Değiştir</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <View style={styles.guvenlikKart}>
-              <View style={styles.guvenlikKartRow}>
-                <View style={styles.guvenlikKartSol}>
-                  <Ionicons name="notifications-outline" size={22} color="#0A1628" />
-                  <View style={styles.guvenlikKartMetin}>
-                    <Text style={styles.guvenlikKartTitle}>E-posta Bildirimleri</Text>
-                    <Text style={styles.guvenlikKartSub}>Rezervasyon ve kampanya bildirimleri</Text>
-                  </View>
-                </View>
-                <Switch
-                  value={epostaBildirim}
-                  onValueChange={setEpostaBildirim}
-                  trackColor={{ false: '#cbd5e1', true: '#99f6e4' }}
-                  thumbColor={epostaBildirim ? '#0ABAB5' : '#f4f4f5'}
-                />
-              </View>
-            </View>
-
-            <View style={[styles.guvenlikKart, { marginBottom: 0 }]}>
-              <View style={styles.guvenlikKartRow}>
-                <View style={styles.guvenlikKartSol}>
-                  <Ionicons name="document-text-outline" size={22} color="#0A1628" />
-                  <View style={styles.guvenlikKartMetin}>
-                    <Text style={styles.guvenlikKartTitle}>Veri ve Gizlilik</Text>
-                    <Text style={styles.guvenlikKartSub}>KVKK kapsamında verilerinizi yönetin</Text>
-                  </View>
-                </View>
-                <TouchableOpacity
-                  style={styles.guvenlikBtnOutline}
-                  activeOpacity={0.85}
-                  onPress={() => setModalKvkk(true)}
-                >
-                  <Text style={styles.guvenlikBtnOutlineText}>Görüntüle</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        ) : null}
       </ScrollView>
+
+      <Modal visible={modalAyarlar} animationType="slide" transparent onRequestClose={() => setModalAyarlar(false)}>
+        <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' }}>
+          <View
+            style={{
+              backgroundColor: '#fff',
+              borderTopLeftRadius: 24,
+              borderTopRightRadius: 24,
+              paddingBottom: 32,
+              height: '85%',
+            }}
+          >
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: 20,
+                borderBottomWidth: 1,
+                borderBottomColor: '#f1f5f9',
+              }}
+            >
+              <Text style={{ fontSize: 17, fontWeight: '800', color: '#0A1628' }}>Ayarlar</Text>
+              <TouchableOpacity onPress={() => setModalAyarlar(false)} hitSlop={12}>
+                <Ionicons name="close" size={24} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={{ flex: 1, padding: 16 }} showsVerticalScrollIndicator={false}>
+              {profil && form ? (
+                <>
+                  <TouchableOpacity
+                    onPress={() => setAccordionProfil((v) => !v)}
+                    style={{
+                      flexDirection: 'row',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      paddingVertical: 14,
+                      borderBottomWidth: 1,
+                      borderBottomColor: '#f1f5f9',
+                      marginBottom: accordionProfil ? 12 : 0,
+                    }}
+                  >
+                    <Text style={{ fontSize: 15, fontWeight: '800', color: '#0A1628' }}>👤 Profil Bilgileri</Text>
+                    <Ionicons name={accordionProfil ? 'chevron-up' : 'chevron-down'} size={18} color="#64748b" />
+                  </TouchableOpacity>
+                  {accordionProfil ? (
+                    <View style={styles.card}>
+                      {kaydetBasari ? (
+                        <View
+                          style={{
+                            backgroundColor: '#dcfce7',
+                            borderRadius: 10,
+                            padding: 12,
+                            marginBottom: 12,
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            gap: 8,
+                          }}
+                        >
+                          <Ionicons name="checkmark-circle" size={18} color="#15803d" />
+                          <Text style={{ color: '#15803d', fontWeight: '700', fontSize: 13 }}>
+                            Profiliniz güncellendi!
+                          </Text>
+                        </View>
+                      ) : null}
+                      <View style={{ marginBottom: 12 }}>
+                        <Text style={styles.profilInputLabel}>Ad</Text>
+                        <TextInput
+                          style={styles.profilInput}
+                          value={form.ad}
+                          onChangeText={(t) => setForm({ ...form, ad: t })}
+                          autoCapitalize="words"
+                          placeholder="Ad"
+                        />
+                      </View>
+                      <View style={{ marginBottom: 12 }}>
+                        <Text style={styles.profilInputLabel}>Soyad</Text>
+                        <TextInput
+                          style={styles.profilInput}
+                          value={form.soyad}
+                          onChangeText={(t) => setForm({ ...form, soyad: t })}
+                          autoCapitalize="words"
+                          placeholder="Soyad"
+                        />
+                      </View>
+                      <View style={{ marginBottom: 12 }}>
+                        <Text style={styles.profilInputLabel}>Telefon</Text>
+                        <TextInput
+                          style={styles.profilInput}
+                          value={form.telefon}
+                          onChangeText={(t) => setForm({ ...form, telefon: t })}
+                          keyboardType="phone-pad"
+                          placeholder="Telefon"
+                        />
+                      </View>
+                      <View style={{ marginBottom: 12 }}>
+                        <Text style={styles.profilInputLabel}>E-posta</Text>
+                        <TextInput
+                          style={[styles.profilInput, styles.profilInputDisabled]}
+                          value={form.email}
+                          editable={false}
+                          placeholder="E-posta"
+                        />
+                      </View>
+                      <View style={{ marginBottom: 12 }}>
+                        <Text style={styles.profilInputLabel}>Doğum Tarihi</Text>
+                        <TextInput
+                          style={styles.profilInput}
+                          value={form.dogumTarihi ?? ''}
+                          onChangeText={(t) => setForm({ ...form, dogumTarihi: t })}
+                          placeholder="GG.AA.YYYY"
+                        />
+                      </View>
+                      <View style={{ marginBottom: 16 }}>
+                        <Text style={styles.profilInputLabel}>Şehir</Text>
+                        <TextInput
+                          style={styles.profilInput}
+                          value={form.sehir}
+                          onChangeText={(t) => setForm({ ...form, sehir: t })}
+                          autoCapitalize="words"
+                          placeholder="Şehir"
+                        />
+                      </View>
+                      <TouchableOpacity
+                        style={styles.btnProfilKaydet}
+                        activeOpacity={0.85}
+                        onPress={() => void handleKaydetProfil()}
+                      >
+                        <Text style={styles.btnProfilKaydetText}>Değişiklikleri Kaydet</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : null}
+                </>
+              ) : null}
+              <TouchableOpacity
+                onPress={() => setAccordionGuvenlik((v) => !v)}
+                style={{
+                  flexDirection: 'row',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  paddingVertical: 14,
+                  borderBottomWidth: 1,
+                  borderBottomColor: '#f1f5f9',
+                  marginBottom: accordionGuvenlik ? 12 : 0,
+                  marginTop: 8,
+                }}
+              >
+                <Text style={{ fontSize: 15, fontWeight: '800', color: '#0A1628' }}>🔒 Güvenlik</Text>
+                <Ionicons name={accordionGuvenlik ? 'chevron-up' : 'chevron-down'} size={18} color="#64748b" />
+              </TouchableOpacity>
+              {accordionGuvenlik ? (
+                <View style={styles.guvenlikSection}>
+                  <View style={styles.guvenlikKart}>
+                    <View style={styles.guvenlikKartRow}>
+                      <View style={styles.guvenlikKartSol}>
+                        <Ionicons name="lock-closed-outline" size={22} color="#0A1628" />
+                        <View style={styles.guvenlikKartMetin}>
+                          <Text style={styles.guvenlikKartTitle}>Parola</Text>
+                          <Text style={styles.guvenlikKartSub}>Hesabınızı koruyun</Text>
+                        </View>
+                      </View>
+                      <TouchableOpacity
+                        style={styles.guvenlikBtnOutline}
+                        activeOpacity={0.85}
+                        onPress={() => setModalParola(true)}
+                      >
+                        <Text style={styles.guvenlikBtnOutlineText}>Parolayı Değiştir</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  <View style={styles.guvenlikKart}>
+                    <View style={styles.guvenlikKartRow}>
+                      <View style={styles.guvenlikKartSol}>
+                        <Ionicons name="notifications-outline" size={22} color="#0A1628" />
+                        <View style={styles.guvenlikKartMetin}>
+                          <Text style={styles.guvenlikKartTitle}>E-posta Bildirimleri</Text>
+                          <Text style={styles.guvenlikKartSub}>Rezervasyon ve kampanya bildirimleri</Text>
+                        </View>
+                      </View>
+                      <Switch
+                        value={epostaBildirim}
+                        onValueChange={setEpostaBildirim}
+                        trackColor={{ false: '#cbd5e1', true: '#99f6e4' }}
+                        thumbColor={epostaBildirim ? '#0ABAB5' : '#f4f4f5'}
+                      />
+                    </View>
+                  </View>
+
+                  <View style={[styles.guvenlikKart, { marginBottom: 0 }]}>
+                    <View style={styles.guvenlikKartRow}>
+                      <View style={styles.guvenlikKartSol}>
+                        <Ionicons name="document-text-outline" size={22} color="#0A1628" />
+                        <View style={styles.guvenlikKartMetin}>
+                          <Text style={styles.guvenlikKartTitle}>Veri ve Gizlilik</Text>
+                          <Text style={styles.guvenlikKartSub}>KVKK kapsamında verilerinizi yönetin</Text>
+                        </View>
+                      </View>
+                      <TouchableOpacity
+                        style={styles.guvenlikBtnOutline}
+                        activeOpacity={0.85}
+                        onPress={() => setModalKvkk(true)}
+                      >
+                        <Text style={styles.guvenlikBtnOutlineText}>Görüntüle</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </View>
+              ) : null}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={modalParola}
