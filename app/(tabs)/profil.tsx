@@ -783,17 +783,27 @@ export default function ProfilScreen() {
                       </Text>
                     </View>
                   </View>
-                  <TouchableOpacity
-                    style={[styles.btnTesiseGit, { backgroundColor: '#0ABAB5', marginTop: 12, flex: undefined, alignSelf: 'stretch' }]}
-                    activeOpacity={0.85}
-                    onPress={() => {
-                      const s = r.tesisler?.slug
-                      if (s)
-                        router.push({ pathname: '/tesis/[slug]', params: { slug: String(s) } })
-                    }}
-                  >
-                    <Text style={styles.btnTesiseGitText}>Tesise Git</Text>
-                  </TouchableOpacity>
+                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+                    <TouchableOpacity
+                      style={{ backgroundColor: '#0ABAB5', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7, flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                      activeOpacity={0.85}
+                      onPress={() => router.push({ pathname: '/siparis/[rezervasyon_id]', params: { rezervasyon_id: r.id, tesis_id: r.tesis_id } })}
+                    >
+                      <Ionicons name="restaurant-outline" size={14} color="#fff" />
+                      <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>Sipariş Ver</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.btnTesiseGit, { backgroundColor: '#0ABAB5', flex: 1 }]}
+                      activeOpacity={0.85}
+                      onPress={() => {
+                        const s = r.tesisler?.slug
+                        if (s)
+                          router.push({ pathname: '/tesis/[slug]', params: { slug: String(s) } })
+                      }}
+                    >
+                      <Text style={styles.btnTesiseGitText}>Tesise Git</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               )
             })
