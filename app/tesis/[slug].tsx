@@ -285,7 +285,8 @@ export default function TesisDetailScreen() {
   const [row, setRow] = useState<TesisDetailRow | null>(null)
   const [loading, setLoading] = useState(true)
   const [galleryIndex, setGalleryIndex] = useState(0)
-  const [fav, setFav] = useState(false)
+  const [isFavori, setIsFavori] = useState(false)
+  const [favoriId, setFavoriId] = useState<string | null>(null)
   const [yorumSayisi, setYorumSayisi] = useState(0)
   const [gruplar, setGruplar] = useState<GrupRow[]>([])
   const [sezlonglar, setSezlonglar] = useState<SezlongRow[]>([])
@@ -355,6 +356,38 @@ export default function TesisDetailScreen() {
         if (cancelled) return
         setYorumSayisi(count ?? 0)
       })
+    return () => {
+      cancelled = true
+    }
+  }, [row?.id])
+
+  useEffect(() => {
+    if (!row?.id) {
+      setIsFavori(false)
+      setFavoriId(null)
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user || cancelled) return
+      const { data: favData } = await supabase
+        .from('favoriler')
+        .select('id')
+        .eq('kullanici_id', user.id)
+        .eq('tesis_id', row.id)
+        .maybeSingle()
+      if (cancelled) return
+      if (favData) {
+        setIsFavori(true)
+        setFavoriId(favData.id)
+      } else {
+        setIsFavori(false)
+        setFavoriId(null)
+      }
+    })()
     return () => {
       cancelled = true
     }
@@ -604,8 +637,33 @@ export default function TesisDetailScreen() {
         <TouchableOpacity onPress={() => router.back()} hitSlop={14} style={styles.headerBtn} accessibilityRole="button">
           <Ionicons name="chevron-back" size={28} color="#0ABAB5" />
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => setFav((v) => !v)} hitSlop={14} style={styles.headerBtn} accessibilityRole="button">
-          <Ionicons name={fav ? 'heart' : 'heart-outline'} size={26} color="#0ABAB5" />
+        <TouchableOpacity
+          onPress={async () => {
+            const tesis = row
+            if (!tesis?.id) return
+            const {
+              data: { user },
+            } = await supabase.auth.getUser()
+            if (!user) return
+            if (isFavori && favoriId) {
+              await supabase.from('favoriler').delete().eq('id', favoriId)
+              setIsFavori(false)
+              setFavoriId(null)
+            } else if (!isFavori) {
+              const { data } = await supabase
+                .from('favoriler')
+                .insert({ kullanici_id: user.id, tesis_id: tesis.id })
+                .select('id')
+                .maybeSingle()
+              setIsFavori(true)
+              setFavoriId(data?.id ?? null)
+            }
+          }}
+          hitSlop={14}
+          style={styles.headerBtn}
+          accessibilityRole="button"
+        >
+          <Ionicons name={isFavori ? 'heart' : 'heart-outline'} size={26} color={isFavori ? '#ef4444' : '#fff'} />
         </TouchableOpacity>
       </View>
 
