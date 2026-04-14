@@ -80,10 +80,10 @@ function formatRezTarih(iso: string) {
 }
 
 function formatTutar(raw: number | string | null | undefined) {
-  if (raw == null) return '₺0'
+  if (raw == null) return '\u20BA0'
   const n = typeof raw === 'number' ? raw : parseFloat(String(raw).replace(/\s/g, '').replace(',', '.'))
-  if (Number.isNaN(n)) return `₺${raw}`
-  return `₺${n.toLocaleString('tr-TR', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
+  if (Number.isNaN(n)) return `\u20BA${raw}`
+  return `\u20BA${n.toLocaleString('tr-TR', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
 }
 
 function aktifSezlongSureStr(r: { baslangic_tarih?: string; bitis_tarih?: string }) {
@@ -137,6 +137,7 @@ export default function ProfilScreen() {
   const [profil, setProfil] = useState<ProfilKullanici | null>(null)
   const [form, setForm] = useState<ProfilForm | null>(null)
   const [rezervasyonlar, setRezervasyonlar] = useState<RezRow[]>([])
+  const [toplamHarcama, setToplamHarcama] = useState<number>(0)
   const [yorumlar, setYorumlar] = useState<any[]>([])
   const [favoriler, setFavoriler] = useState<any[]>([])
   const [kaydetBasari, setKaydetBasari] = useState(false)
@@ -364,6 +365,8 @@ export default function ProfilScreen() {
               }
             }),
           )
+          const toplam = (rezData ?? []).reduce((acc: number, r: any) => acc + (Number(r.toplam_tutar) || 0), 0)
+          setToplamHarcama(toplam)
         }
 
         const { data: yorumData } = await supabase
@@ -589,6 +592,22 @@ export default function ProfilScreen() {
             </View>
           </View>
           <Text style={styles.uyeEtiket}>Üye: {profil?.uyeAyYil ?? ''}</Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 32, marginTop: 16 }}>
+            <View style={{ alignItems: 'center' }}>
+              <Text style={{ fontSize: 22, fontWeight: '900', color: '#fff' }}>{rezervasyonlar.length}</Text>
+              <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 2 }}>Rezervasyon</Text>
+            </View>
+            <View style={{ width: 1, backgroundColor: 'rgba(255,255,255,0.2)' }} />
+            <View style={{ alignItems: 'center' }}>
+              <Text style={{ fontSize: 22, fontWeight: '900', color: '#fff' }}>
+                {'\u20BA'}
+                {toplamHarcama.toLocaleString('tr-TR')}
+              </Text>
+              <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 2 }}>
+                Toplam Harcama
+              </Text>
+            </View>
+          </View>
         </View>
 
         <View style={styles.card}>
