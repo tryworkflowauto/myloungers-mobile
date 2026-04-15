@@ -160,6 +160,7 @@ export default function ProfilScreen() {
   const [cameraPermission, requestCameraPermission] = useCameraPermissions()
   const [showQrScanner, setShowQrScanner] = useState(false)
   const qrHandledRef = useRef(false)
+  const [modalSezlongAktifDegil, setModalSezlongAktifDegil] = useState(false)
   const [modalKodGir, setModalKodGir] = useState(false)
   const [kodInput, setKodInput] = useState('')
   const [kodHata, setKodHata] = useState('')
@@ -787,7 +788,13 @@ export default function ProfilScreen() {
                     <TouchableOpacity
                       style={{ backgroundColor: '#0ABAB5', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7, flexDirection: 'row', alignItems: 'center', gap: 4 }}
                       activeOpacity={0.85}
-                      onPress={() => router.push({ pathname: '/siparis/[rezervasyon_id]', params: { rezervasyon_id: r.id, tesis_id: r.tesis_id } })}
+                      onPress={() => {
+                        if (r.durum !== 'onaylı') {
+                          setModalSezlongAktifDegil(true)
+                          return
+                        }
+                        router.push({ pathname: '/siparis/[rezervasyon_id]', params: { rezervasyon_id: r.id, tesis_id: r.tesis_id } })
+                      }}
                     >
                       <Ionicons name="restaurant-outline" size={14} color="#fff" />
                       <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>Sipariş Ver</Text>
@@ -1551,6 +1558,31 @@ export default function ProfilScreen() {
           </View>
         </View>
       </Modal>
+      <Modal
+        visible={modalSezlongAktifDegil}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setModalSezlongAktifDegil(false)}
+      >
+        <View style={styles.sezlongAktifDegilBackdrop}>
+          <View style={styles.sezlongAktifDegilCard}>
+            <Text style={styles.sezlongAktifDegilEmoji}>🏖️</Text>
+            <Text style={styles.sezlongAktifDegilTitle}>Sezlong Henüz Aktif Değil</Text>
+            <Text style={styles.sezlongAktifDegilDesc}>
+              Sipariş verebilmek için önce QR kodu okutun veya rezervasyon kodunuzu girin.
+            </Text>
+            <View style={styles.sezlongAktifDegilBtnRow}>
+              <TouchableOpacity
+                style={styles.sezlongAktifDegilTamamBtn}
+                activeOpacity={0.85}
+                onPress={() => setModalSezlongAktifDegil(false)}
+              >
+                <Text style={styles.sezlongAktifDegilTamamText}>Tamam</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   )
 }
@@ -2073,5 +2105,38 @@ const styles = StyleSheet.create({
   kodModalOnaylaText: { color: '#fff', fontSize: 16, fontWeight: '800' },
   kodModalIptal: { marginTop: 14, alignItems: 'center', paddingVertical: 8 },
   kodModalIptalText: { fontSize: 15, fontWeight: '700', color: '#64748b' },
+  sezlongAktifDegilBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  sezlongAktifDegilCard: {
+    width: '100%',
+    maxWidth: 420,
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 28,
+  },
+  sezlongAktifDegilEmoji: { fontSize: 48, textAlign: 'center' },
+  sezlongAktifDegilTitle: {
+    marginTop: 8,
+    color: '#0A1628',
+    fontSize: 18,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  sezlongAktifDegilDesc: { marginTop: 8, color: '#64748b', fontSize: 14, textAlign: 'center' },
+  sezlongAktifDegilBtnRow: { marginTop: 20, flexDirection: 'row', gap: 10 },
+  sezlongAktifDegilTamamBtn: {
+    width: '100%',
+    backgroundColor: '#e2e8f0',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sezlongAktifDegilTamamText: { color: '#334155', fontSize: 14, fontWeight: '700' },
   placeholderTab: { fontSize: 14, color: '#64748b', textAlign: 'center', paddingVertical: 8 },
 })
