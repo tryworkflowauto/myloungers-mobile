@@ -225,7 +225,13 @@ export default function ProfilScreen() {
         return
       }
 
+      await supabase
+        .from('rezervasyonlar')
+        .update({ durum: 'onaylandi' })
+        .eq('id', rezData.id)
+
       setDogrulandiId(aktifSezlonglar[0]?.id ?? null)
+      await loadProfil()
       setSuccessMesaj('Rezervasyon do\u011fruland\u0131! Ho\u015f geldiniz.')
       setTimeout(() => setSuccessMesaj(''), 3000)
       setModalKodGir(false)
@@ -394,7 +400,7 @@ export default function ProfilScreen() {
           .from('rezervasyonlar')
           .select('*, tesisler(ad, slug, fotograflar, sehir, ilce)')
           .eq('kullanici_id', data.id)
-          .eq('durum', 'onaylandi')
+          .in('durum', ['onaylandi', 'onaylı'])
           .lte('baslangic_tarih', bugun)
           .gte('bitis_tarih', bugun)
         if (!aktifSezErr && aktifSezData) {
@@ -804,7 +810,7 @@ export default function ProfilScreen() {
                       style={{ backgroundColor: '#0ABAB5', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7, flexDirection: 'row', alignItems: 'center', gap: 4 }}
                       activeOpacity={0.85}
                       onPress={() => {
-                        if (r.durum !== 'onaylı') {
+                        if (r.durum !== 'onaylandi') {
                           setModalSezlongAktifDegil(true)
                           return
                         }
