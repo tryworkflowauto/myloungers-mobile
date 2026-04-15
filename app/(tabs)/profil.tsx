@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase'
 import { Ionicons } from '@expo/vector-icons'
 import { CameraView, useCameraPermissions } from 'expo-camera'
+import * as Clipboard from 'expo-clipboard'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useRouter } from 'expo-router'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -766,9 +767,23 @@ export default function ProfilScreen() {
                         ) : (
                           <View />
                         )}
-                        <Text style={{ fontSize: 12, color: '#0d9488', fontWeight: 'bold' }}>
-                          {r.rezervasyon_kodu ?? ''}
-                        </Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Text style={{ fontSize: 12, color: '#0d9488', fontWeight: 'bold' }}>
+                            {r.rezervasyon_kodu ?? ''}
+                          </Text>
+                          <TouchableOpacity
+                            activeOpacity={0.8}
+                            onPress={async () => {
+                              const kod = r.rezervasyon_kodu ?? ''
+                              if (!kod) return
+                              await Clipboard.setStringAsync(kod)
+                              setSuccessMesaj('✓ Kod kopyalandı')
+                              setTimeout(() => setSuccessMesaj(''), 2000)
+                            }}
+                          >
+                            <Ionicons name="copy-outline" size={14} color="#0d9488" />
+                          </TouchableOpacity>
+                        </View>
                       </View>
                       <Text style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>
                         Tarih: {formatRezTarih(r.baslangic_tarih ?? '')}
@@ -1596,7 +1611,7 @@ const styles = StyleSheet.create({
     left: 16,
     right: 16,
     zIndex: 999,
-    backgroundColor: '#22c55e',
+    backgroundColor: '#16a34a',
     borderRadius: 12,
     padding: 16,
     flexDirection: 'row',
