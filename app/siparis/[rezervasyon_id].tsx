@@ -192,7 +192,7 @@ export default function SiparisScreen() {
           return {
             siparis_id: siparisData.id,
             urun_id: urunId,
-            urun_adi: String(urun?.ad ?? ''),
+            ad: String(urun?.ad ?? ''),
             fiyat: num(urun?.fiyat),
             adet,
           }
