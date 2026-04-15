@@ -175,9 +175,19 @@ export default function SiparisScreen() {
     }
     setGonderiliyor(true)
     try {
+      const { data: rezData2 } = await supabase
+        .from('rezervasyonlar')
+        .select('sezlong_id, sezlonglar(numara)')
+        .eq('id', rezervasyon_id)
+        .maybeSingle()
+      const sezlongNo =
+        rezData2?.sezlonglar && !Array.isArray(rezData2.sezlonglar)
+          ? String((rezData2.sezlonglar as any).numara ?? '')
+          : ''
+
       const { data: siparisData, error: siparisErr } = await supabase
         .from('siparisler')
-        .insert({ tesis_id, rezervasyon_id, durum: 'bekliyor', toplam: sepetToplam })
+        .insert({ tesis_id, rezervasyon_id, durum: 'bekliyor', toplam: sepetToplam, sezlong_no: sezlongNo })
         .select('id')
         .single()
       if (siparisErr || !siparisData?.id) {
