@@ -177,7 +177,7 @@ export default function SiparisScreen() {
     try {
       const { data: siparisData, error: siparisErr } = await supabase
         .from('siparisler')
-        .insert({ tesis_id, rezervasyon_id, durum: 'beklemede', toplam: sepetToplam })
+        .insert({ tesis_id, rezervasyon_id, durum: 'bekliyor', toplam: sepetToplam })
         .select('id')
         .single()
       if (siparisErr || !siparisData?.id) {
@@ -192,7 +192,7 @@ export default function SiparisScreen() {
           return {
             siparis_id: siparisData.id,
             urun_id: urunId,
-            ad: String(urun?.ad ?? ''),
+            urun_adi: String(urun?.ad ?? ''),
             fiyat: num(urun?.fiyat),
             adet,
           }
