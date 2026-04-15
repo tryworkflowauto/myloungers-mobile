@@ -184,15 +184,33 @@ export default function SiparisScreen() {
       if (rezData2?.sezlong_id) {
         const { data: sezlongData } = await supabase
           .from('sezlonglar')
-          .select('numara')
+          .select('numara, grup_id, sezlong_gruplari(ad)')
           .eq('id', rezData2.sezlong_id)
           .maybeSingle()
-        sezlongNo = sezlongData?.numara ? String(sezlongData.numara) : ''
+        const grupAd =
+          sezlongData?.sezlong_gruplari && !Array.isArray(sezlongData.sezlong_gruplari)
+            ? String((sezlongData.sezlong_gruplari as any).ad ?? '')
+            : ''
+        const numara = sezlongData?.numara ? String(sezlongData.numara) : ''
+        sezlongNo = grupAd && numara ? `${grupAd.charAt(0).toUpperCase()}${numara}` : numara
       }
+      const { data: rezMusteriData } = await supabase
+        .from('rezervasyonlar')
+        .select('musteri_adi')
+        .eq('id', rezervasyon_id)
+        .maybeSingle()
+      const musteriAdi = rezMusteriData?.musteri_adi || 'Misafir'
 
       const { data: siparisData, error: siparisErr } = await supabase
         .from('siparisler')
-        .insert({ tesis_id, rezervasyon_id, durum: 'bekliyor', toplam: sepetToplam, sezlong_no: sezlongNo })
+        .insert({
+          tesis_id,
+          rezervasyon_id,
+          durum: 'bekliyor',
+          toplam: sepetToplam,
+          sezlong_no: sezlongNo,
+          musteri_adi: musteriAdi,
+        })
         .select('id')
         .single()
       if (siparisErr || !siparisData?.id) {
