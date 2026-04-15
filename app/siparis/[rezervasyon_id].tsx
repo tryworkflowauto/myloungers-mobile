@@ -177,13 +177,18 @@ export default function SiparisScreen() {
     try {
       const { data: rezData2 } = await supabase
         .from('rezervasyonlar')
-        .select('sezlong_id, sezlonglar(numara)')
+        .select('sezlong_id')
         .eq('id', rezervasyon_id)
         .maybeSingle()
-      const sezlongNo =
-        rezData2?.sezlonglar && !Array.isArray(rezData2.sezlonglar)
-          ? String((rezData2.sezlonglar as any).numara ?? '')
-          : ''
+      let sezlongNo = ''
+      if (rezData2?.sezlong_id) {
+        const { data: sezlongData } = await supabase
+          .from('sezlonglar')
+          .select('numara')
+          .eq('id', rezData2.sezlong_id)
+          .maybeSingle()
+        sezlongNo = sezlongData?.numara ? String(sezlongData.numara) : ''
+      }
 
       const { data: siparisData, error: siparisErr } = await supabase
         .from('siparisler')
