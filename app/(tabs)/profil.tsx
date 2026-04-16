@@ -215,6 +215,7 @@ export default function ProfilScreen() {
         .from('rezervasyonlar')
         .select('*')
         .eq('kullanici_id', user.id)
+        .not('pgtranid', 'is', null)
         .eq('rezervasyon_kodu', kodInput.trim().toUpperCase())
         .lte('baslangic_tarih', bugun)
         .gte('bitis_tarih', bugun)
@@ -287,13 +288,16 @@ export default function ProfilScreen() {
             'id, baslangic_tarih, bitis_tarih, sezlong_id, toplam_tutar, durum, tesis_id, rezervasyon_kodu, giris_yapildi, tesisler(ad, fotograflar, sehir, kategori, slug), sezlonglar(numara, grup_id, sezlong_gruplari(ad))',
           )
           .eq('kullanici_id', data.id)
-          .in('durum', ['onaylandi', 'iptal', 'iptal_edildi'])
+          .not('pgtranid', 'is', null)
           .order('baslangic_tarih', { ascending: false })
 
         console.log('REZ DATA:', rezData)
         console.log('REZ ERROR:', rezError)
 
         if (rezData) {
+          const bugun = new Date()
+          bugun.setHours(0, 0, 0, 0)
+
           setRezervasyonlar(
             rezData.map((r: any) => {
               const foto = r.tesisler?.fotograflar?.[0]
@@ -328,28 +332,19 @@ export default function ProfilScreen() {
                 kategoriLabel = String(r.tesisler?.kategori ?? '')
               }
 
-              const baslangicRaw = r.baslangic_tarih ? new Date(r.baslangic_tarih) : null
               const bitisRaw = r.bitis_tarih ? new Date(r.bitis_tarih) : null
-              const bugun = new Date()
-              bugun.setHours(0, 0, 0, 0)
-              const baslangic = baslangicRaw ? new Date(baslangicRaw) : null
-              if (baslangic) baslangic.setHours(0, 0, 0, 0)
               const bitis = bitisRaw ? new Date(bitisRaw) : null
               if (bitis) bitis.setHours(0, 0, 0, 0)
 
               let rezDurum: RezDurum = 'gecmis'
               if (r.durum === 'iptal' || r.durum === 'iptal_edildi') {
                 rezDurum = 'iptal'
-              } else if (r.durum === 'onaylandi') {
-                if (baslangic && bitis && baslangic <= bugun && bitis >= bugun) {
-                  rezDurum = 'aktif'
-                } else if (baslangic && baslangic > bugun) {
-                  rezDurum = 'yaklasan'
-                } else if (bitis && bitis < bugun) {
-                  rezDurum = 'gecmis'
-                } else {
-                  rezDurum = 'gecmis'
-                }
+              } else if (bitis && bitis < bugun) {
+                rezDurum = 'gecmis'
+              } else if (r.giris_yapildi === true) {
+                rezDurum = 'aktif'
+              } else {
+                rezDurum = 'yaklasan'
               }
 
               return {
@@ -379,31 +374,24 @@ export default function ProfilScreen() {
           )
           const toplam = (rezData ?? []).reduce((acc: number, r: any) => acc + (Number(r.toplam_tutar) || 0), 0)
           setToplamHarcama(toplam)
-        }
 
-        const { data: yorumData } = await supabase
-          .from('yorumlar')
-          .select('id, yorum, puan, created_at, durum, tesisler(ad)')
-          .eq('kullanici_id', data.id)
-          .order('created_at', { ascending: false })
-        if (yorumData) setYorumlar(yorumData)
-
-        const { data: favData } = await supabase
-          .from('favoriler')
-          .select('id, tesis_id, created_at, tesisler(ad, fotograflar, slug)')
-          .eq('kullanici_id', data.id)
-          .order('created_at', { ascending: false })
-        if (favData) setFavoriler(favData)
-
-        const bugun = new Date().toISOString().split('T')[0]
-        const { data: aktifSezData, error: aktifSezErr } = await supabase
-          .from('rezervasyonlar')
-          .select('*, tesisler(ad, slug, fotograflar, sehir, ilce)')
-          .eq('kullanici_id', data.id)
-          .in('durum', ['onaylandi', 'onaylı'])
-          .lte('baslangic_tarih', bugun)
-          .gte('bitis_tarih', bugun)
-        if (!aktifSezErr && aktifSezData) {
+          const aktifSezData = rezData.filter((r: any) => {
+            if (r.durum === 'iptal' || r.durum === 'iptal_edildi') return false
+            if (r.giris_yapildi !== true) return false
+            const baslangic = r.baslangic_tarih ? new Date(r.baslangic_tarih) : null
+            const bitis = r.bitis_tarih ? new Date(r.bitis_tarih) : null
+            if (
+              !baslangic ||
+              Number.isNaN(baslangic.getTime()) ||
+              !bitis ||
+              Number.isNaN(bitis.getTime())
+            ) {
+              return false
+            }
+            baslangic.setHours(0, 0, 0, 0)
+            bitis.setHours(0, 0, 0, 0)
+            return baslangic <= bugun && bitis >= bugun
+          })
           setAktifSezlonglar(aktifSezData)
           const sezlongIds = aktifSezData.map((r: any) => r.sezlong_id).filter(Boolean)
           let sezlongMap: Record<string, string> = {}
@@ -423,6 +411,21 @@ export default function ProfilScreen() {
           }
           setSezlongMap(sezlongMap)
         }
+
+        const { data: yorumData } = await supabase
+          .from('yorumlar')
+          .select('id, yorum, puan, created_at, durum, tesisler(ad)')
+          .eq('kullanici_id', data.id)
+          .order('created_at', { ascending: false })
+        if (yorumData) setYorumlar(yorumData)
+
+        const { data: favData } = await supabase
+          .from('favoriler')
+          .select('id, tesis_id, created_at, tesisler(ad, fotograflar, slug)')
+          .eq('kullanici_id', data.id)
+          .order('created_at', { ascending: false })
+        if (favData) setFavoriler(favData)
+
       }
     } catch (e) {
       console.log('LOAD PROFIL HATA:', e)
