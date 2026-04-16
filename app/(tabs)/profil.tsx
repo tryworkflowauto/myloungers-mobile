@@ -227,7 +227,7 @@ export default function ProfilScreen() {
 
       await supabase
         .from('rezervasyonlar')
-        .update({ durum: 'onaylandi' })
+        .update({ durum: 'onaylandi', giris_yapildi: true })
         .eq('id', rezData.id)
 
       setDogrulandiId(aktifSezlonglar[0]?.id ?? null)
@@ -284,7 +284,7 @@ export default function ProfilScreen() {
         const { data: rezData, error: rezError } = await supabase
           .from('rezervasyonlar')
           .select(
-            'id, baslangic_tarih, bitis_tarih, sezlong_id, toplam_tutar, durum, tesis_id, rezervasyon_kodu, tesisler(ad, fotograflar, sehir, kategori, slug), sezlonglar(numara, grup_id, sezlong_gruplari(ad))',
+            'id, baslangic_tarih, bitis_tarih, sezlong_id, toplam_tutar, durum, tesis_id, rezervasyon_kodu, giris_yapildi, tesisler(ad, fotograflar, sehir, kategori, slug), sezlonglar(numara, grup_id, sezlong_gruplari(ad))',
           )
           .eq('kullanici_id', data.id)
           .in('durum', ['onaylandi', 'iptal', 'iptal_edildi'])
@@ -810,7 +810,7 @@ export default function ProfilScreen() {
                       style={{ backgroundColor: '#0ABAB5', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7, flexDirection: 'row', alignItems: 'center', gap: 4 }}
                       activeOpacity={0.85}
                       onPress={() => {
-                        if (r.durum !== 'onaylandi') {
+                        if (r.giris_yapildi !== true) {
                           setModalSezlongAktifDegil(true)
                           return
                         }
