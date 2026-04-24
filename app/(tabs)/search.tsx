@@ -34,7 +34,7 @@ export type TesisRow = {
   lon?: number | null
 }
 
-const WEEKDAY_LABELS_TR = ['P', 'P', 'S', 'Ç', 'P', 'C', 'C'] as const
+const WEEKDAY_LABELS_TR = ['P', 'S', 'Ç', 'P', 'C', 'C', 'P'] as const
 const WEEKDAY_LABELS_EN = ['M', 'T', 'W', 'T', 'F', 'S', 'S'] as const
 
 function sameCalendarDay(a: Date, b: Date) {

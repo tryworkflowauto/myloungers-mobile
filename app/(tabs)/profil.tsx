@@ -1,6 +1,9 @@
 import { supabase } from '@/lib/supabase'
+import { SIPARIS_DURUM } from '@/lib/constants'
+import CallWaiterModal from '@/components/CallWaiterModal'
 import { Ionicons } from '@expo/vector-icons'
 import { CameraView, useCameraPermissions } from 'expo-camera'
+import { Audio } from 'expo-av'
 import * as Clipboard from 'expo-clipboard'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useRouter } from 'expo-router'
@@ -21,6 +24,15 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 type RezDurum = 'yaklasan' | 'aktif' | 'gecmis' | 'iptal'
+
+type AktifCagriDurum = {
+  id: string
+  createdAt: string
+  yanitTarihi: string | null
+  yanitSuresi: number | null
+  varisTarihi: string | null
+  varisSuresi: number | null
+}
 
 type ProfilKullanici = {
   id: string
@@ -88,6 +100,44 @@ function formatTutar(raw: number | string | null | undefined) {
   return `\u20BA${n.toLocaleString('tr-TR', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
 }
 
+function formatSure(saniye: number): string {
+  const dk = Math.floor(saniye / 60)
+  const sn = saniye % 60
+  if (dk === 0) return `${sn} sn`
+  if (sn === 0) return `${dk} dk`
+  return `${dk} dk ${sn} sn`
+}
+
+function formatZamanOnce(createdAt: Date | string): string {
+  const diff = Date.now() - new Date(createdAt).getTime()
+  const dk = Math.floor(diff / 60000)
+  const sa = Math.floor(dk / 60)
+  if (sa > 0) return `${sa} sa önce`
+  if (dk > 0) return `${dk} dk önce`
+  return 'Az önce'
+}
+
+function getTesisAdFromRez(rezervasyonId: any, rezervasyonlar: any[]): string {
+  const rez = rezervasyonlar.find((r) => String(r.id) === String(rezervasyonId))
+  return rez?.tesisAd || rez?.tesisler?.ad || 'Bilinmeyen Tesis'
+}
+
+async function playHazirSesi() {
+  try {
+    const { sound } = await Audio.Sound.createAsync(
+      require('../../assets/sounds/hazir.mp3'),
+      { shouldPlay: true, volume: 0.8 }
+    )
+    sound.setOnPlaybackStatusUpdate((status: any) => {
+      if (status.didJustFinish) {
+        sound.unloadAsync().catch(() => {})
+      }
+    })
+  } catch (e) {
+    console.log('[ses] hazir.mp3 çalınamadı:', e)
+  }
+}
+
 function aktifSezlongSureStr(r: { baslangic_tarih?: string; bitis_tarih?: string }) {
   if (!r.bitis_tarih || !r.baslangic_tarih) return '—'
   const d0 = new Date(r.baslangic_tarih)
@@ -124,6 +174,7 @@ function rezDurumBadgeColors(d: RezDurum): { bg: string; fg: string } {
 
 type AltSekme =
   | 'rezervasyonlar'
+  | 'siparisler'
   | 'yorumlar'
   | 'favoriler'
   | 'profil-bilgileri'
@@ -140,6 +191,7 @@ export default function ProfilScreen() {
   const [form, setForm] = useState<ProfilForm | null>(null)
   const [rezervasyonlar, setRezervasyonlar] = useState<RezRow[]>([])
   const [toplamHarcama, setToplamHarcama] = useState<number>(0)
+  const [toplamKalanBakiye, setToplamKalanBakiye] = useState<number>(0)
   const [yorumlar, setYorumlar] = useState<any[]>([])
   const [favoriler, setFavoriler] = useState<any[]>([])
   const [kaydetBasari, setKaydetBasari] = useState(false)
@@ -166,6 +218,18 @@ export default function ProfilScreen() {
   const [kodInput, setKodInput] = useState('')
   const [kodHata, setKodHata] = useState('')
   const [kodGonderiliyor, setKodGonderiliyor] = useState(false)
+  const [aktifCagrilar, setAktifCagrilar] = useState<Record<string, AktifCagriDurum>>({})
+  const [bildirimlerLoading, setBildirimlerLoading] = useState(false)
+  const [showCallModal, setShowCallModal] = useState(false)
+  const [callModalRez, setCallModalRez] = useState<RezRow | null>(null)
+  const [garsonCagriCooldown, setGarsonCagriCooldown] = useState<Record<string, number>>({})
+  const [tick, setTick] = useState(0)
+  const [aktifSiparisler, setAktifSiparisler] = useState<any[]>([])
+  const [gecmisTumSiparisler, setGecmisTumSiparisler] = useState<any[]>([])
+  const [gecmisTumLoading, setGecmisTumLoading] = useState(false)
+  const [gecmisFilter, setGecmisFilter] = useState<'bugun' | 'hafta' | 'ay' | 'tumu'>('ay')
+  const [aktifSiparislerLoading, setAktifSiparislerLoading] = useState(false)
+  const [cagriToast, setCagriToast] = useState<{ visible: boolean; mesaj: string }>({ visible: false, mesaj: '' })
 
   const onQrBarcodeScanned = useCallback((result: { data: string }) => {
     if (qrHandledRef.current) return
@@ -226,22 +290,96 @@ export default function ProfilScreen() {
         return
       }
 
-      await supabase
+      const { error: updErr } = await supabase
         .from('rezervasyonlar')
         .update({ durum: 'onaylandi', giris_yapildi: true })
         .eq('id', rezData.id)
+      if (updErr) {
+        setKodHata('Kod g\u00fcncellenemedi')
+        return
+      }
 
-      setDogrulandiId(aktifSezlonglar[0]?.id ?? null)
-      await loadProfil()
+      // Optimistic update: local state'i hemen g\u00fcncelle
+      setRezervasyonlar((prev) =>
+        prev.map((r) =>
+          String(r.id) === String(rezData.id)
+            ? ({ ...r, durum: 'aktif', giris_yapildi: true } as any)
+            : r
+        )
+      )
+      setAktifSezlonglar((prev) =>
+        prev.map((r: any) =>
+          String(r.id) === String(rezData.id)
+            ? { ...r, durum: 'aktif', giris_yapildi: true }
+            : r
+        )
+      )
+
+      setDogrulandiId(rezData.id ?? null)
       setSuccessMesaj('Rezervasyon do\u011fruland\u0131! Ho\u015f geldiniz.')
       setTimeout(() => setSuccessMesaj(''), 3000)
       setModalKodGir(false)
       setKodInput('')
+
+      // Arka planda senkron (kullan\u0131c\u0131 beklemez)
+      loadProfil().catch(() => {})
     } catch {
       setKodHata('Ge\u00e7ersiz kod')
     } finally {
       setKodGonderiliyor(false)
     }
+  }
+
+  async function handleCallConfirm() {
+    const rez = callModalRez
+    setShowCallModal(false)
+    setCallModalRez(null)
+    if (!rez) return
+    const kilitKey = String(rez.id)
+    const musteriAd = `${profil?.ad || ''} ${profil?.soyad || ''}`.trim() || 'Müşteri'
+    const insertedAt = new Date().toISOString()
+    const { data: insertData, error } = await supabase
+      .from('bildirimler')
+      .insert({
+        tip: 'garson_cagri',
+        tesis_id: (rez as any).tesis_id,
+        sezlong_id: (rez as any).sezlong_id,
+        rezervasyon_id: rez.id,
+        kullanici_id: null,
+        baslik: 'Garson Çağrısı',
+        mesaj: `${musteriAd} size çağrıda bulundu`,
+        okundu: false,
+      })
+      .select('id, created_at')
+      .single()
+    if (error) {
+      console.error('handleCallConfirm insert error:', JSON.stringify(error, null, 2))
+      Alert.alert('Hata', 'Çağrı gönderilemedi, tekrar deneyin')
+      return
+    }
+    const createdAt = insertData?.created_at ?? insertedAt
+    setAktifCagrilar((prev) => ({
+      ...prev,
+      [kilitKey]: {
+        id: String(insertData?.id ?? ''),
+        createdAt,
+        yanitTarihi: null,
+        yanitSuresi: null,
+        varisTarihi: null,
+        varisSuresi: null,
+      },
+    }))
+    setCagriToast({ visible: true, mesaj: 'Garson çağrıldı, birazdan yanınızda olacak' })
+    setTimeout(() => setCagriToast({ visible: false, mesaj: '' }), 3000)
+    const yeniBitis = Date.now() + 2 * 60 * 1000
+    setGarsonCagriCooldown((prev) => ({ ...prev, [kilitKey]: yeniBitis }))
+    setTimeout(() => {
+      setGarsonCagriCooldown((prev) => {
+        const n = { ...prev }
+        if ((n[kilitKey] ?? 0) <= Date.now()) delete n[kilitKey]
+        return n
+      })
+    }, 2 * 60 * 1000 + 200)
   }
 
   const loadProfil = async () => {
@@ -285,10 +423,10 @@ export default function ProfilScreen() {
         const { data: rezData, error: rezError } = await supabase
           .from('rezervasyonlar')
           .select(
-            'id, baslangic_tarih, bitis_tarih, sezlong_id, toplam_tutar, durum, tesis_id, rezervasyon_kodu, giris_yapildi, tesisler(ad, fotograflar, sehir, kategori, slug), sezlonglar(numara, grup_id, sezlong_gruplari(ad))',
+            'id, baslangic_tarih, bitis_tarih, sezlong_id, toplam_tutar, bakiye_yuklenen, bakiye_harcanan, bakiye_kalan, durum, tesis_id, rezervasyon_kodu, giris_yapildi, tesisler(ad, fotograflar, sehir, kategori, slug), sezlonglar(numara, grup_id, sezlong_gruplari(ad))',
           )
           .eq('kullanici_id', data.id)
-          .not('pgtranid', 'is', null)
+          .in('durum', ['onaylandi', 'aktif', 'tamamlandi', 'iptal', 'iptal_edildi'])
           .order('baslangic_tarih', { ascending: false })
 
         console.log('REZ DATA:', rezData)
@@ -332,6 +470,9 @@ export default function ProfilScreen() {
                 kategoriLabel = String(r.tesisler?.kategori ?? '')
               }
 
+              const baslangicRaw = r.baslangic_tarih ? new Date(r.baslangic_tarih) : null
+              const baslangic = baslangicRaw ? new Date(baslangicRaw) : null
+              if (baslangic) baslangic.setHours(0, 0, 0, 0)
               const bitisRaw = r.bitis_tarih ? new Date(r.bitis_tarih) : null
               const bitis = bitisRaw ? new Date(bitisRaw) : null
               if (bitis) bitis.setHours(0, 0, 0, 0)
@@ -339,12 +480,16 @@ export default function ProfilScreen() {
               let rezDurum: RezDurum = 'gecmis'
               if (r.durum === 'iptal' || r.durum === 'iptal_edildi') {
                 rezDurum = 'iptal'
-              } else if (bitis && bitis < bugun) {
+              } else if (r.durum === 'tamamlandi') {
                 rezDurum = 'gecmis'
-              } else if (r.giris_yapildi === true) {
-                rezDurum = 'aktif'
-              } else {
-                rezDurum = 'yaklasan'
+              } else if (r.durum === 'onaylandi' || r.durum === 'aktif') {
+                if (baslangic && baslangic > bugun) {
+                  rezDurum = 'yaklasan'
+                } else if (baslangic && bitis && baslangic <= bugun && bugun <= bitis) {
+                  rezDurum = 'aktif'
+                } else if (bitis && bitis < bugun) {
+                  rezDurum = 'gecmis'
+                }
               }
 
               return {
@@ -372,12 +517,28 @@ export default function ProfilScreen() {
               }
             }),
           )
-          const toplam = (rezData ?? []).reduce((acc: number, r: any) => acc + (Number(r.toplam_tutar) || 0), 0)
+          const toplam = (rezData ?? []).reduce((acc: number, r: any) => {
+            if (r.durum === 'iptal' || r.durum === 'iptal_edildi') return acc
+            return acc + (Number(r.toplam_tutar) || 0)
+          }, 0)
           setToplamHarcama(toplam)
+          const toplamKalan = (rezData ?? []).reduce((acc: number, r: any) => {
+            if (r.durum === 'iptal' || r.durum === 'iptal_edildi') return acc
+            // Sadece şu an devam eden rezervasyonların kalan bakiyesi
+            const bugun = new Date()
+            bugun.setHours(0, 0, 0, 0)
+            const baslangic = r.baslangic_tarih ? new Date(r.baslangic_tarih) : null
+            const bitis = r.bitis_tarih ? new Date(r.bitis_tarih) : null
+            if (!baslangic || !bitis) return acc
+            baslangic.setHours(0, 0, 0, 0)
+            bitis.setHours(23, 59, 59, 999)
+            if (baslangic > bugun || bitis < bugun) return acc
+            return acc + (Number(r.bakiye_kalan) || 0)
+          }, 0)
+          setToplamKalanBakiye(toplamKalan)
 
           const aktifSezData = rezData.filter((r: any) => {
             if (r.durum === 'iptal' || r.durum === 'iptal_edildi') return false
-            if (r.giris_yapildi !== true) return false
             const baslangic = r.baslangic_tarih ? new Date(r.baslangic_tarih) : null
             const bitis = r.bitis_tarih ? new Date(r.bitis_tarih) : null
             if (
@@ -439,31 +600,217 @@ export default function ProfilScreen() {
   }, [])
 
   useEffect(() => {
-    if (altSekme !== 'bildirimler') return
-    const fetchBildirimler = async () => {
-      setBildirimlerYukleniyor(true)
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) {
-        setBildirimlerYukleniyor(false)
+    const iv = setInterval(() => setTick((t) => t + 1), 10000)
+    return () => clearInterval(iv)
+  }, [])
+
+  useEffect(() => {
+    if (!profil) return
+    const rezIds = rezervasyonlar.map((r) => String(r.id)).filter(Boolean)
+    if (rezIds.length === 0) {
+      setAktifCagrilar({})
+      setBildirimler([])
+      return
+    }
+
+    async function fetchAktifCagrilar() {
+      const { data, error } = await supabase
+        .from('bildirimler')
+        .select('id, rezervasyon_id, created_at, yanit_tarihi, yanit_suresi_saniye, varis_tarihi, varis_suresi_saniye, okundu')
+        .eq('tip', 'garson_cagri')
+        .in('rezervasyon_id', rezIds)
+        .order('created_at', { ascending: false })
+      if (error) {
+        console.error('fetchAktifCagrilar:', JSON.stringify(error))
+        return
+      }
+      const now = Date.now()
+      const onDakika = 10 * 60 * 1000
+      const birDakika = 60 * 1000
+      const yeni: Record<string, AktifCagriDurum> = {}
+      for (const b of data ?? []) {
+        const key = String(b.rezervasyon_id)
+        if (yeni[key]) continue
+        const createdMs = new Date(b.created_at).getTime()
+        const varisMs = b.varis_tarihi ? new Date(b.varis_tarihi).getTime() : null
+        const isOkunmamis = !b.okundu && now - createdMs < onDakika
+        const isYoldaFazinda = b.yanit_tarihi !== null && b.varis_tarihi === null
+        const isYeniVaris = varisMs !== null && now - varisMs < birDakika
+        if (isOkunmamis || isYoldaFazinda || isYeniVaris) {
+          yeni[key] = {
+            id: String(b.id),
+            createdAt: b.created_at,
+            yanitTarihi: b.yanit_tarihi ?? null,
+            yanitSuresi: b.yanit_suresi_saniye ?? null,
+            varisTarihi: b.varis_tarihi ?? null,
+            varisSuresi: b.varis_suresi_saniye ?? null,
+          }
+        }
+      }
+      setAktifCagrilar(yeni)
+    }
+
+    async function fetchBildirimler() {
+      setBildirimlerLoading(true)
+      if (!profil?.id) {
+        setBildirimlerLoading(false)
+        setBildirimler([])
+        return
+      }
+      // Önce kullanıcının tüm rezervasyon id'lerini çek
+      const { data: tumRez, error: rezErr } = await supabase
+        .from('rezervasyonlar')
+        .select('id')
+        .eq('kullanici_id', profil.id)
+      if (rezErr) {
+        console.error('fetchBildirimler rez error:', JSON.stringify(rezErr))
+        setBildirimlerLoading(false)
+        return
+      }
+      const tumRezIds = (tumRez ?? []).map((r: any) => String(r.id))
+      if (tumRezIds.length === 0) {
+        setBildirimler([])
+        setBildirimlerLoading(false)
         return
       }
       const { data, error } = await supabase
         .from('bildirimler')
-        .select('*')
-        .eq('kullanici_id', user.id)
+        .select('id, rezervasyon_id, created_at, yanit_tarihi, yanit_suresi_saniye, varis_tarihi, varis_suresi_saniye, okundu')
+        .eq('tip', 'garson_cagri')
+        .in('rezervasyon_id', tumRezIds)
         .order('created_at', { ascending: false })
-      if (!error && data) setBildirimler(data)
-      setBildirimlerYukleniyor(false)
+        .limit(50)
+      setBildirimlerLoading(false)
+      if (error) {
+        console.error('fetchBildirimler:', JSON.stringify(error))
+        return
+      }
+      setBildirimler(data ?? [])
     }
-    void fetchBildirimler()
-  }, [altSekme])
+
+    fetchAktifCagrilar()
+    fetchBildirimler()
+
+    const channel = supabase
+      .channel(`musteri-cagri-${profil.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'bildirimler' },
+        (payload) => {
+          const updated = payload.new as any
+          if (updated && rezIds.includes(String(updated.rezervasyon_id))) {
+            fetchAktifCagrilar()
+            fetchBildirimler()
+          }
+        },
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [profil, rezervasyonlar])
+
+  useEffect(() => {
+    if (!profil?.id) return
+
+    async function fetchSiparisler() {
+      setAktifSiparislerLoading(true)
+      setGecmisTumLoading(true)
+
+      if (!profil?.id) {
+        setAktifSiparislerLoading(false)
+        setGecmisTumLoading(false)
+        setAktifSiparisler([])
+        setGecmisTumSiparisler([])
+        return
+      }
+
+      // Önce kullanicinin tum rezervasyon id'lerini al (siparisler rezervasyon_id uzerinden bagli)
+      const { data: rezData, error: rezErr } = await supabase
+        .from('rezervasyonlar')
+        .select('id')
+        .eq('kullanici_id', profil.id)
+
+      if (rezErr || !rezData || rezData.length === 0) {
+        setAktifSiparisler([])
+        setGecmisTumSiparisler([])
+        setAktifSiparislerLoading(false)
+        setGecmisTumLoading(false)
+        return
+      }
+
+      const rezIds = rezData.map((r: any) => String(r.id))
+
+      // Aktif siparişler
+      const { data: aktifData, error: aktifErr } = await supabase
+        .from('siparisler')
+        .select('id, durum, toplam, created_at, tesis_id, rezervasyon_id, tesisler(ad)')
+        .in('rezervasyon_id', rezIds)
+        .in('durum', [SIPARIS_DURUM.YENI, SIPARIS_DURUM.HAZIRLANIYOR, SIPARIS_DURUM.HAZIR, SIPARIS_DURUM.YOLDA])
+        .order('created_at', { ascending: false })
+
+      if (!aktifErr) setAktifSiparisler(aktifData ?? [])
+      setAktifSiparislerLoading(false)
+
+      // Geçmiş siparişler
+      const simdi = new Date()
+      let baslangicTarihi: Date | null = null
+      if (gecmisFilter === 'bugun') {
+        baslangicTarihi = new Date(simdi.getFullYear(), simdi.getMonth(), simdi.getDate())
+      } else if (gecmisFilter === 'hafta') {
+        baslangicTarihi = new Date(simdi.getTime() - 7 * 24 * 60 * 60 * 1000)
+      } else if (gecmisFilter === 'ay') {
+        baslangicTarihi = new Date(simdi.getFullYear(), simdi.getMonth(), 1)
+      }
+
+      let query = supabase
+        .from('siparisler')
+        .select('id, durum, toplam, created_at, tesis_id, tesisler(ad)')
+        .in('rezervasyon_id', rezIds)
+        .order('created_at', { ascending: false })
+        .limit(50)
+
+      if (baslangicTarihi) {
+        query = query.gte('created_at', baslangicTarihi.toISOString())
+      }
+
+      const { data: gecmisData, error: gecmisErr } = await query
+      if (!gecmisErr) setGecmisTumSiparisler(gecmisData ?? [])
+      setGecmisTumLoading(false)
+    }
+
+    fetchSiparisler()
+
+    // Realtime subscription for siparis durum değişiklikleri
+    const channel = supabase
+      .channel(`musteri-siparis-${profil.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'siparisler' },
+        (payload) => {
+          const oldRow = (payload as any).old
+          const newRow = (payload as any).new
+          const eskiDurum = oldRow?.durum
+          const yeniDurum = newRow?.durum
+          if (yeniDurum === SIPARIS_DURUM.HAZIR && eskiDurum !== SIPARIS_DURUM.HAZIR) {
+            playHazirSesi()
+          }
+          fetchSiparisler()
+        },
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [profil?.id, gecmisFilter])
 
   const avatarHarf = useMemo(() => {
     const t = (profil?.ad ?? '').trim()
     return t ? t.charAt(0).toLocaleUpperCase('tr-TR') : '?'
   }, [profil?.ad])
+  const uyelikTarihi = profil?.uyeAyYil ?? ''
 
   const filtrelenmisRez = useMemo(() => {
     if (rezFilter === 'tum') return rezervasyonlar
@@ -597,7 +944,7 @@ export default function ProfilScreen() {
               <Text style={styles.avatarText}>{avatarHarf}</Text>
             </View>
           </View>
-          <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.75)', fontWeight: '600', textAlign: 'center', marginTop: 12, letterSpacing: 1 }}>HOŞ GELDİN</Text>
+          <Text style={{ fontSize: 9, color: 'rgba(255,255,255,0.75)', fontWeight: '600', textAlign: 'center', marginTop: 1, letterSpacing: 1 }}>HOŞ GELDİN</Text>
           <Text style={styles.userName}>
             {profil ? `${profil.ad} ${profil.soyad}`.trim() : ''}
           </Text>
@@ -611,16 +958,26 @@ export default function ProfilScreen() {
             ) : null}
             <View style={styles.badgeAltin}>
               <Ionicons name="ribbon-outline" size={14} color="#b45309" />
-              <Text style={styles.badgeAltinText}>Sadık Üye</Text>
+              <Text style={styles.badgeAltinText}>Üye</Text>
             </View>
           </View>
-          <Text style={styles.uyeEtiket}>Üye: {profil?.uyeAyYil ?? ''}</Text>
+          {uyelikTarihi ? (
+            <Text style={{
+              fontSize: 10,
+              color: 'rgba(255,255,255,0.85)',
+              fontWeight: '600',
+              marginTop: 3,
+              textAlign: 'center'
+            }}>
+              Üye: {uyelikTarihi}
+            </Text>
+          ) : null}
         </View>
 
         <View
           style={{
             marginHorizontal: 16,
-            marginTop: -24,
+            marginTop: -12,
             borderRadius: 20,
             overflow: 'hidden',
             shadowColor: '#000',
@@ -645,22 +1002,31 @@ export default function ProfilScreen() {
                 paddingRight: 16,
               }}
             >
-              <Ionicons name="umbrella-outline" size={24} color="rgba(255,255,255,0.85)" />
-              <Text style={{ fontSize: 28, fontWeight: '900', color: '#fff', marginTop: 6 }}>
-                {rezervasyonlar.length}
+              <Ionicons name="umbrella-outline" size={18} color="rgba(255,255,255,0.85)" />
+              <Text style={{ fontSize: 22, fontWeight: '800', color: '#fff', marginTop: 6 }}>
+                {rezervasyonlar.filter((r) => r.durum !== 'iptal').length}
               </Text>
-              <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', marginTop: 2, fontWeight: '600' }}>
+              <Text style={{ fontSize: 10, color: 'rgba(255,255,255,0.75)', marginTop: 2, fontWeight: '600' }}>
                 Rezervasyon
               </Text>
             </View>
-            <View style={{ flex: 1, alignItems: 'center', paddingLeft: 16 }}>
-              <Ionicons name="wallet-outline" size={24} color="rgba(255,255,255,0.85)" />
-              <Text style={{ fontSize: 28, fontWeight: '900', color: '#fff', marginTop: 6 }}>
+            <View style={{ flex: 1, alignItems: 'center', paddingLeft: 16, borderRightWidth: 1, borderRightColor: 'rgba(255,255,255,0.25)', paddingRight: 16 }}>
+              <Ionicons name="wallet-outline" size={18} color="rgba(255,255,255,0.85)" />
+              <Text style={{ fontSize: 22, fontWeight: '800', color: '#fff', marginTop: 6 }}>
                 {'\u20BA'}
                 {toplamHarcama.toLocaleString('tr-TR')}
               </Text>
-              <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', marginTop: 2, fontWeight: '600' }}>
+              <Text style={{ fontSize: 10, color: 'rgba(255,255,255,0.75)', marginTop: 2, fontWeight: '600' }}>
                 Toplam Harcama
+              </Text>
+            </View>
+            <View style={{ flex: 1, alignItems: 'center' }}>
+              <Ionicons name="wallet-outline" size={18} color="#fff" style={{ marginBottom: 4 }} />
+              <Text style={{ fontSize: 22, fontWeight: '800', color: '#fff', marginTop: 2 }}>
+                {'₺'}{toplamKalanBakiye.toLocaleString('tr-TR')}
+              </Text>
+              <Text style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', marginTop: 2 }}>
+                Kalan Bakiye
               </Text>
             </View>
           </LinearGradient>
@@ -732,15 +1098,16 @@ export default function ProfilScreen() {
                     elevation: 3,
                   }}
                 >
-                  <View style={{ flexDirection: 'row', gap: 12 }}>
-                    <View style={{ width: 80, height: 80, borderRadius: 8, overflow: 'hidden' }}>
+                  <View style={{ flexDirection: 'row', gap: 14 }}>
+                    <View style={{ width: 110, height: 110, borderRadius: 12, overflow: 'hidden' }}>
                       {fotoUri ? (
-                        <Image source={{ uri: fotoUri }} style={{ width: 80, height: 80 }} resizeMode="cover" />
+                        <Image source={{ uri: fotoUri }} style={{ width: 110, height: 110, borderRadius: 12 }} resizeMode="cover" />
                       ) : (
                         <View
                           style={{
-                            width: 80,
-                            height: 80,
+                            width: 110,
+                            height: 110,
+                            borderRadius: 12,
                             backgroundColor: '#e2e8f0',
                             alignItems: 'center',
                             justifyContent: 'center',
@@ -808,33 +1175,191 @@ export default function ProfilScreen() {
                       </Text>
                     </View>
                   </View>
-                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
-                    <TouchableOpacity
-                      style={{ backgroundColor: '#0ABAB5', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7, flexDirection: 'row', alignItems: 'center', gap: 4 }}
-                      activeOpacity={0.85}
-                      onPress={() => {
-                        if (r.giris_yapildi !== true) {
-                          setModalSezlongAktifDegil(true)
-                          return
-                        }
-                        router.push({ pathname: '/siparis/[rezervasyon_id]', params: { rezervasyon_id: r.id, tesis_id: r.tesis_id } })
-                      }}
-                    >
-                      <Ionicons name="restaurant-outline" size={14} color="#fff" />
-                      <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>Sipariş Ver</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.btnTesiseGit, { backgroundColor: '#0ABAB5', flex: 1 }]}
-                      activeOpacity={0.85}
-                      onPress={() => {
-                        const s = r.tesisler?.slug
-                        if (s)
-                          router.push({ pathname: '/tesis/[slug]', params: { slug: String(s) } })
-                      }}
-                    >
-                      <Text style={styles.btnTesiseGitText}>Tesise Git</Text>
-                    </TouchableOpacity>
-                  </View>
+                  {(() => {
+                    const cagri = aktifCagrilar[String(r.id)]
+                    if (!cagri) return null
+                    const nowMs = Date.now()
+                    const createdMs = new Date(cagri.createdAt).getTime()
+
+                    // Aşama 3: varis_tarihi dolu
+                    if (cagri.varisTarihi) {
+                      const varisMs = new Date(cagri.varisTarihi).getTime()
+                      if (nowMs - varisMs > 60000) return null
+                      const sureSn = cagri.varisSuresi ?? Math.round((varisMs - createdMs) / 1000)
+                      return (
+                        <View
+                          style={{
+                            paddingVertical: 10,
+                            paddingHorizontal: 12,
+                            borderRadius: 10,
+                            marginTop: 10,
+                            backgroundColor: 'rgba(8,145,178,0.08)',
+                            borderWidth: StyleSheet.hairlineWidth,
+                            borderColor: 'rgba(8,145,178,0.3)',
+                          }}
+                        >
+                          <Text style={{ fontSize: 13, color: '#0C4A6E', fontWeight: '600' }}>
+                            💚 Garson şezlongunuza geldi • Süre: {formatSure(sureSn)}
+                          </Text>
+                        </View>
+                      )
+                    }
+
+                    // Aşama 2: yanit_tarihi dolu, varis yok
+                    if (cagri.yanitTarihi) {
+                      const yanitMs = new Date(cagri.yanitTarihi).getTime()
+                      const sureSn = cagri.yanitSuresi ?? Math.round((yanitMs - createdMs) / 1000)
+                      return (
+                        <View
+                          style={{
+                            paddingVertical: 10,
+                            paddingHorizontal: 12,
+                            borderRadius: 10,
+                            marginTop: 10,
+                            backgroundColor: 'rgba(16,185,129,0.08)',
+                            borderWidth: StyleSheet.hairlineWidth,
+                            borderColor: 'rgba(16,185,129,0.3)',
+                          }}
+                        >
+                          <Text style={{ fontSize: 13, color: '#065F46', fontWeight: '600' }}>
+                            ✅ Garson yolda • Yanıt süresi: {formatSure(sureSn)}
+                          </Text>
+                        </View>
+                      )
+                    }
+
+                    // Aşama 1: bekliyor
+                    const dakikaOnce = Math.max(0, Math.round((nowMs - createdMs) / 60000))
+                    const zamanMetni = dakikaOnce === 0 ? 'Az önce' : `${dakikaOnce} dk önce`
+                    return (
+                      <View
+                        style={{
+                          paddingVertical: 10,
+                          paddingHorizontal: 12,
+                          borderRadius: 10,
+                          marginTop: 10,
+                          backgroundColor: 'rgba(245,130,31,0.08)',
+                          borderWidth: StyleSheet.hairlineWidth,
+                          borderColor: 'rgba(245,130,31,0.3)',
+                        }}
+                      >
+                        <Text style={{ fontSize: 13, color: '#92400E', fontWeight: '600' }}>
+                          🔔 Garson çağrısı gönderildi • {zamanMetni}
+                        </Text>
+                      </View>
+                    )
+                  })()}
+                  {(() => {
+                    const rezId = String(r.id)
+                    const girisYapildi = r.giris_yapildi === true
+                    const cagriKilitli = (garsonCagriCooldown[rezId] ?? 0) > Date.now()
+                    const aktifVeOnayli = (r.durum === 'aktif' || r.durum === 'onaylandi')
+
+                    return (
+                      <View style={{ gap: 8, marginTop: 10 }}>
+                        {/* 1. satır: Garson Çağır + Sipariş Ver */}
+                        <View style={{ flexDirection: 'row', gap: 8 }}>
+                          <TouchableOpacity
+                            disabled={!girisYapildi || !aktifVeOnayli || cagriKilitli}
+                            activeOpacity={0.85}
+                            style={{
+                              flex: 1,
+                              backgroundColor: !girisYapildi ? '#E5E7EB' : (cagriKilitli ? '#FCA5A5' : '#EF4444'),
+                              paddingVertical: 12,
+                              borderRadius: 10,
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: 6,
+                            }}
+                            onPress={() => {
+                              if (!girisYapildi) {
+                                Alert.alert('Şezlong girişi gerekli', 'Önce QR veya Kod ile şezlong girişinizi yapın.')
+                                return
+                              }
+                              setCallModalRez(r as any)
+                              setShowCallModal(true)
+                            }}
+                          >
+                            <Ionicons
+                              name={!girisYapildi ? 'lock-closed' : (cagriKilitli ? 'checkmark-circle' : 'notifications')}
+                              size={15}
+                              color={!girisYapildi ? '#9CA3AF' : '#fff'}
+                            />
+                            <Text style={{ color: !girisYapildi ? '#6B7280' : '#fff', fontWeight: '700', fontSize: 13 }}>
+                              {!girisYapildi ? 'Garson Çağır' : (cagriKilitli ? 'Çağrıldı' : 'Garson Çağır')}
+                            </Text>
+                          </TouchableOpacity>
+
+                          <TouchableOpacity
+                            disabled={!girisYapildi || !aktifVeOnayli}
+                            activeOpacity={0.85}
+                            style={{
+                              flex: 1,
+                              backgroundColor: !girisYapildi ? '#E5E7EB' : '#F5821F',
+                              paddingVertical: 12,
+                              borderRadius: 10,
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: 6,
+                            }}
+                            onPress={() => {
+                              if (!girisYapildi) {
+                                Alert.alert('Şezlong girişi gerekli', 'Önce QR veya Kod ile şezlong girişinizi yapın.')
+                                return
+                              }
+                              router.push({ pathname: '/siparis/[rezervasyon_id]', params: { rezervasyon_id: String(r.id), tesis_id: String(r.tesis_id || '') } })
+                            }}
+                          >
+                            <Ionicons name={!girisYapildi ? 'lock-closed' : 'restaurant'} size={15} color={!girisYapildi ? '#9CA3AF' : '#fff'} />
+                            <Text style={{ color: !girisYapildi ? '#6B7280' : '#fff', fontWeight: '700', fontSize: 13 }}>
+                              Sipariş Ver
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+
+                        {/* 2. satır: Tesise Git (full width) */}
+                        <TouchableOpacity
+                          activeOpacity={0.85}
+                          style={{
+                            backgroundColor: '#0ABAB5',
+                            paddingVertical: 12,
+                            borderRadius: 10,
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 6,
+                          }}
+                          onPress={() => {
+                            const slug = r.tesisler?.slug || (r.tesisAd ?? '').toLowerCase().replace(/\s+/g, '-')
+                            router.push(`/tesis/${slug}`)
+                          }}
+                        >
+                          <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>Tesise Git →</Text>
+                        </TouchableOpacity>
+
+                        {/* Bilgi mesajı: şezlong girişi yapılmamışsa */}
+                        {!girisYapildi && (
+                          <View style={{
+                            backgroundColor: '#FEF3C7',
+                            borderWidth: StyleSheet.hairlineWidth,
+                            borderColor: '#FCD34D',
+                            borderRadius: 8,
+                            padding: 10,
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            gap: 8,
+                          }}>
+                            <Ionicons name="information-circle" size={16} color="#92400E" />
+                            <Text style={{ flex: 1, fontSize: 12, color: '#92400E', fontWeight: '600' }}>
+                              Sipariş verebilmek için QR Oku yada Kod ile şezlong girişi yapın.
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    )
+                  })()}
                 </View>
               )
             })
@@ -850,6 +1375,7 @@ export default function ProfilScreen() {
           {(
             [
               { key: 'rezervasyonlar' as const, label: 'Rezervasyonlarım' },
+              { key: 'siparisler' as const, label: 'Siparişlerim' },
               { key: 'yorumlar' as const, label: 'Yorumlarım' },
               { key: 'favoriler' as const, label: 'Favorilerim' },
               { key: 'bildirimler' as const, label: 'Bildirimler' },
@@ -1104,32 +1630,301 @@ export default function ProfilScreen() {
         ) : null}
 
         {altSekme === 'bildirimler' ? (
-          <View style={styles.card}>
-            {bildirimlerYukleniyor ? (
-              <ActivityIndicator size="small" color="#0ABAB5" style={{ paddingVertical: 16 }} />
+          <View style={{ marginTop: 12 }}>
+            {bildirimlerLoading ? (
+              <View style={{ padding: 24, alignItems: 'center' }}>
+                <ActivityIndicator size="small" color="#0ABAB5" />
+              </View>
             ) : bildirimler.length === 0 ? (
-              <Text style={styles.bosListe}>Henüz bildiriminiz yok.</Text>
+              <View style={{ padding: 32, alignItems: 'center' }}>
+                <Ionicons name="notifications-off-outline" size={40} color="#cbd5e1" />
+                <Text style={{ marginTop: 10, fontSize: 14, color: '#64748b' }}>
+                  Henüz bildirim yok
+                </Text>
+              </View>
             ) : (
-              bildirimler.map((item: any) => (
-                <View
-                  key={item.id}
-                  style={[
-                    styles.bildirimCard,
-                    item.okundu === false ? styles.bildirimCardOkunmadi : null,
-                  ]}
-                >
-                  <Text style={styles.bildirimBaslik}>{item.baslik ?? ''}</Text>
-                  <Text style={styles.bildirimMesaj}>{item.mesaj ?? ''}</Text>
-                  <Text style={styles.bildirimTarih}>
-                    {item.created_at
-                      ? new Date(item.created_at).toLocaleDateString('tr-TR')
-                      : ''}
-                  </Text>
-                </View>
-              ))
+              bildirimler.map((b: any) => {
+                const now = Date.now()
+                const createdMs = new Date(b.created_at).getTime()
+                const yanitMs = b.yanit_tarihi ? new Date(b.yanit_tarihi).getTime() : null
+                const varisMs = b.varis_tarihi ? new Date(b.varis_tarihi).getTime() : null
+                const tesisAd = getTesisAdFromRez(b.rezervasyon_id, rezervasyonlar)
+
+                let bgColor = 'rgba(148,163,184,0.08)'
+                let borderColor = 'rgba(148,163,184,0.3)'
+                let textColor = '#475569'
+                let icon = 'notifications-outline'
+                let durumMetni = 'Bekliyor'
+
+                if (varisMs) {
+                  bgColor = 'rgba(8,145,178,0.08)'
+                  borderColor = 'rgba(8,145,178,0.3)'
+                  textColor = '#0C4A6E'
+                  icon = 'checkmark-done'
+                  const varisSure = b.varis_suresi_saniye ?? Math.round((varisMs - createdMs) / 1000)
+                  const yanitSure = b.yanit_suresi_saniye ?? (yanitMs ? Math.round((yanitMs - createdMs) / 1000) : null)
+                  if (yanitSure !== null) {
+                    durumMetni = `✓ Yolda: ${formatSure(yanitSure)} • ✓ Vardı: ${formatSure(varisSure)}`
+                  } else {
+                    durumMetni = `✓ Vardı: ${formatSure(varisSure)}`
+                  }
+                } else if (yanitMs) {
+                  bgColor = 'rgba(16,185,129,0.08)'
+                  borderColor = 'rgba(16,185,129,0.3)'
+                  textColor = '#065F46'
+                  icon = 'checkmark'
+                  const yanitSure = b.yanit_suresi_saniye ?? Math.round((yanitMs - createdMs) / 1000)
+                  durumMetni = `✓ Yolda: ${formatSure(yanitSure)}`
+                } else if (!b.okundu && (now - createdMs) > 5 * 60 * 1000) {
+                  bgColor = 'rgba(239,68,68,0.08)'
+                  borderColor = 'rgba(239,68,68,0.3)'
+                  textColor = '#991B1B'
+                  icon = 'alert-circle-outline'
+                  durumMetni = 'Garson henüz yanıt vermedi'
+                } else if (!b.okundu) {
+                  bgColor = 'rgba(245,130,31,0.08)'
+                  borderColor = 'rgba(245,130,31,0.3)'
+                  textColor = '#92400E'
+                  icon = 'time-outline'
+                  durumMetni = 'Bekleniyor'
+                }
+
+                return (
+                  <View
+                    key={String(b.id)}
+                    style={{
+                      backgroundColor: bgColor,
+                      borderWidth: StyleSheet.hairlineWidth,
+                      borderColor: borderColor,
+                      borderRadius: 10,
+                      padding: 12,
+                      marginBottom: 8,
+                    }}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 8 }}>
+                        <Ionicons name={icon as any} size={16} color={textColor} />
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: textColor, flex: 1 }} numberOfLines={1}>
+                          {tesisAd}
+                        </Text>
+                      </View>
+                      <Text style={{ fontSize: 11, color: textColor, opacity: 0.8 }}>
+                        {formatZamanOnce(b.created_at)}
+                      </Text>
+                    </View>
+                    <Text style={{ fontSize: 12, color: textColor, fontWeight: '600', marginLeft: 24 }}>
+                      {durumMetni}
+                    </Text>
+                  </View>
+                )
+              })
             )}
           </View>
         ) : null}
+
+        {altSekme === 'siparisler' && (
+          <View style={{ marginTop: 12, gap: 16 }}>
+            {/* Aktif Siparişler */}
+            <View>
+              <Text style={{ fontSize: 14, fontWeight: '700', color: '#0f172a', marginBottom: 10 }}>
+                Aktif Siparişlerim
+              </Text>
+              {aktifSiparislerLoading ? (
+                <ActivityIndicator size="small" color="#0ABAB5" />
+              ) : aktifSiparisler.length === 0 ? (
+                <View style={{ padding: 20, alignItems: 'center', backgroundColor: '#f8fafc', borderRadius: 10 }}>
+                  <Ionicons name="restaurant-outline" size={32} color="#cbd5e1" />
+                  <Text style={{ marginTop: 8, fontSize: 13, color: '#64748b' }}>
+                    Aktif siparişiniz yok
+                  </Text>
+                </View>
+              ) : (
+                aktifSiparisler.map((s: any) => {
+                  const stages = [SIPARIS_DURUM.YENI, SIPARIS_DURUM.HAZIRLANIYOR, SIPARIS_DURUM.HAZIR, SIPARIS_DURUM.YOLDA, SIPARIS_DURUM.TESLIM_EDILDI]
+                  const stageLabels = ['Yeni', 'Hazırlanıyor', 'Hazır', 'Yolda', 'Teslim Edildi']
+                  const currentIdx = stages.indexOf(s.durum)
+                  const tesisAd = s.tesisler?.ad || 'Bilinmeyen Tesis'
+
+                  return (
+                    <View
+                      key={String(s.id)}
+                      style={{
+                        backgroundColor: '#fff',
+                        borderRadius: 12,
+                        padding: 14,
+                        marginBottom: 10,
+                        borderWidth: StyleSheet.hairlineWidth,
+                        borderColor: '#e2e8f0',
+                        shadowColor: '#000',
+                        shadowOpacity: 0.05,
+                        shadowRadius: 8,
+                        shadowOffset: { width: 0, height: 2 },
+                        elevation: 2,
+                      }}
+                    >
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                        <Text style={{ fontSize: 14, fontWeight: '700', color: '#0f172a' }} numberOfLines={1}>
+                          {tesisAd}
+                        </Text>
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: '#F5821F' }}>
+                          ₺{Number(s.toplam || 0).toLocaleString('tr-TR')}
+                        </Text>
+                      </View>
+
+                      {/* Progress bar */}
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginVertical: 10 }}>
+                        {stages.map((stage, idx) => {
+                          const isDone = idx <= currentIdx
+                          const isActive = idx === currentIdx
+                          const size = isActive ? 32 : 26
+                          return (
+                            <View key={stage} style={{ flex: 1, alignItems: 'center', position: 'relative' }}>
+                              {idx > 0 && (
+                                <View style={{
+                                  position: 'absolute',
+                                  height: 2,
+                                  backgroundColor: idx <= currentIdx ? '#10B981' : '#e2e8f0',
+                                  top: size / 2 - 1,
+                                  right: '50%',
+                                  width: '100%',
+                                  zIndex: 0,
+                                }} />
+                              )}
+                              <View style={{
+                                width: size,
+                                height: size,
+                                borderRadius: size / 2,
+                                backgroundColor: isActive ? '#F5821F' : (isDone ? '#10B981' : '#e2e8f0'),
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                zIndex: 1,
+                              }}>
+                                {isDone && !isActive ? (
+                                  <Ionicons name="checkmark" size={14} color="#fff" />
+                                ) : (
+                                  <Text style={{ fontSize: 11, color: '#fff', fontWeight: '700' }}>
+                                    {idx + 1}
+                                  </Text>
+                                )}
+                              </View>
+                              <Text style={{
+                                fontSize: 9,
+                                marginTop: 4,
+                                color: isActive ? '#F5821F' : (isDone ? '#10B981' : '#94a3b8'),
+                                fontWeight: isActive ? '700' : '500',
+                                textAlign: 'center',
+                              }}>
+                                {stageLabels[idx]}
+                              </Text>
+                            </View>
+                          )
+                        })}
+                      </View>
+
+                      {/* Ürünler */}
+                      {s.siparis_urunleri && Array.isArray(s.siparis_urunleri) && s.siparis_urunleri.length > 0 && (
+                        <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#e2e8f0' }}>
+                          {s.siparis_urunleri.map((u: any) => (
+                            <Text key={String(u.id)} style={{ fontSize: 12, color: '#475569', marginBottom: 2 }}>
+                              {u.adet}x {u.urun_adi} — ₺{Number(u.birim_fiyat || 0).toLocaleString('tr-TR')}
+                            </Text>
+                          ))}
+                        </View>
+                      )}
+                    </View>
+                  )
+                })
+              )}
+            </View>
+
+            {/* Sipariş Geçmişim */}
+            <View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: '#0f172a' }}>
+                  Sipariş Geçmişim
+                </Text>
+              </View>
+
+              {/* Filtre butonları */}
+              <View style={{ flexDirection: 'row', gap: 6, marginBottom: 10 }}>
+                {(['bugun', 'hafta', 'ay', 'tumu'] as const).map((f) => {
+                  const labels = { bugun: 'Bugün', hafta: 'Hafta', ay: 'Ay', tumu: 'Tümü' }
+                  const isActive = gecmisFilter === f
+                  return (
+                    <TouchableOpacity
+                      key={f}
+                      onPress={() => setGecmisFilter(f)}
+                      style={{
+                        paddingVertical: 6,
+                        paddingHorizontal: 12,
+                        borderRadius: 20,
+                        backgroundColor: isActive ? '#0ABAB5' : '#f1f5f9',
+                      }}
+                    >
+                      <Text style={{
+                        fontSize: 12,
+                        fontWeight: '600',
+                        color: isActive ? '#fff' : '#475569',
+                      }}>
+                        {labels[f]}
+                      </Text>
+                    </TouchableOpacity>
+                  )
+                })}
+              </View>
+
+              {gecmisTumLoading ? (
+                <ActivityIndicator size="small" color="#0ABAB5" />
+              ) : gecmisTumSiparisler.length === 0 ? (
+                <View style={{ padding: 20, alignItems: 'center', backgroundColor: '#f8fafc', borderRadius: 10 }}>
+                  <Ionicons name="archive-outline" size={32} color="#cbd5e1" />
+                  <Text style={{ marginTop: 8, fontSize: 13, color: '#64748b' }}>
+                    Bu filtrede sipariş yok
+                  </Text>
+                </View>
+              ) : (
+                gecmisTumSiparisler.map((s: any) => {
+                  const tesisAd = s.tesisler?.ad || 'Bilinmeyen Tesis'
+                  const tarih = new Date(s.created_at).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', year: 'numeric' })
+                  const isIptal = s.durum === 'iptal' || s.durum === 'iptal_edildi'
+                  return (
+                    <View
+                      key={String(s.id)}
+                      style={{
+                        backgroundColor: '#fff',
+                        borderRadius: 10,
+                        padding: 12,
+                        marginBottom: 8,
+                        borderWidth: StyleSheet.hairlineWidth,
+                        borderColor: '#e2e8f0',
+                      }}
+                    >
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: '#0f172a', flex: 1 }} numberOfLines={1}>
+                          {tesisAd}
+                        </Text>
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: isIptal ? '#94a3b8' : '#F5821F' }}>
+                          ₺{Number(s.toplam || 0).toLocaleString('tr-TR')}
+                        </Text>
+                      </View>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Text style={{ fontSize: 11, color: '#64748b' }}>{tarih}</Text>
+                        <Text style={{
+                          fontSize: 11,
+                          fontWeight: '600',
+                          color: isIptal ? '#94a3b8' : '#10B981',
+                          textTransform: 'capitalize',
+                        }}>
+                          {isIptal ? 'İptal' : 'Teslim Edildi'}
+                        </Text>
+                      </View>
+                    </View>
+                  )
+                })
+              )}
+            </View>
+          </View>
+        )}
 
       </ScrollView>
 
@@ -1607,6 +2402,57 @@ export default function ProfilScreen() {
           </View>
         </View>
       </Modal>
+      <CallWaiterModal
+        isOpen={showCallModal}
+        onClose={() => { setShowCallModal(false); setCallModalRez(null) }}
+        onConfirm={handleCallConfirm}
+        tesisAdi={callModalRez?.tesisAd ?? ''}
+      />
+      {cagriToast.visible && (
+        <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            top: 80,
+            left: 16,
+            right: 16,
+            zIndex: 9999,
+            elevation: 10,
+            alignItems: 'center',
+          }}
+        >
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 10,
+              backgroundColor: '#0ABAB5',
+              paddingVertical: 12,
+              paddingHorizontal: 16,
+              borderRadius: 12,
+              maxWidth: '100%',
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.2,
+              shadowRadius: 8,
+            }}
+          >
+            <View style={{
+              width: 28,
+              height: 28,
+              borderRadius: 14,
+              backgroundColor: 'rgba(255,255,255,0.2)',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}>
+              <Ionicons name="checkmark" size={18} color="#fff" />
+            </View>
+            <Text style={{ color: '#fff', fontSize: 14, fontWeight: '700', flex: 1 }}>
+              {cagriToast.mesaj}
+            </Text>
+          </View>
+        </View>
+      )}
     </SafeAreaView>
   )
 }
@@ -1644,8 +2490,8 @@ const styles = StyleSheet.create({
   header: {
     backgroundColor: '#0ABAB5',
     paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 24,
+    paddingTop: 0,
+    paddingBottom: 22,
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
   },
@@ -1653,32 +2499,32 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   headerIconBtn: { padding: 4 },
-  avatarWrap: { alignItems: 'center', marginTop: 4 },
+  avatarWrap: { alignItems: 'center', marginTop: 2 },
   avatarCircle: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     backgroundColor: '#0f766e',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 3,
     borderColor: 'rgba(255,255,255,0.35)',
   },
-  avatarText: { fontSize: 36, fontWeight: '800', color: '#fff' },
+  avatarText: { fontSize: 24, fontWeight: '800', color: '#fff' },
   userName: {
-    marginTop: 12,
+    marginTop: 1,
     textAlign: 'center',
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '800',
     color: '#fff',
   },
   userEmail: {
-    marginTop: 4,
+    marginTop: 1,
     textAlign: 'center',
-    fontSize: 13,
+    fontSize: 11,
     color: 'rgba(255,255,255,0.9)',
   },
   badgeRow: {
@@ -1686,32 +2532,32 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     justifyContent: 'center',
     gap: 8,
-    marginTop: 12,
+    marginTop: 3,
   },
   badgeYesil: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
     backgroundColor: '#dcfce7',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     borderRadius: 20,
   },
-  badgeYesilText: { fontSize: 11, fontWeight: '700', color: '#15803d' },
+  badgeYesilText: { fontSize: 10, fontWeight: '700', color: '#15803d' },
   badgeAltin: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
     backgroundColor: '#fef3c7',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     borderRadius: 20,
   },
-  badgeAltinText: { fontSize: 11, fontWeight: '700', color: '#b45309' },
+  badgeAltinText: { fontSize: 10, fontWeight: '700', color: '#b45309' },
   uyeEtiket: {
-    marginTop: 10,
+    marginTop: 4,
     textAlign: 'center',
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: '600',
     color: 'rgba(255,255,255,0.95)',
   },

@@ -20,7 +20,7 @@ import { supabase } from '../../lib/supabase'
 const SCREEN_W = Dimensions.get('window').width
 const GALLERY_MAIN_H = 240
 
-const WEEKDAY_LABELS_TR = ['P', 'P', 'S', 'Ç', 'P', 'C', 'C'] as const
+const WEEKDAY_LABELS_TR = ['P', 'S', 'Ç', 'P', 'C', 'C', 'P'] as const
 
 function sameCalendarDay(a: Date, b: Date) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
