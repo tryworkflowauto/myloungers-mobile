@@ -13,6 +13,7 @@ import {
     Alert,
     Image,
     Modal,
+    RefreshControl,
     ScrollView,
     StyleSheet,
     Switch,
@@ -76,6 +77,10 @@ type RezRow = {
   kategori: string
   tesisSlug: string
   sezlongLabel: string
+  iptalSaatOncesi: number | null
+  calismaSaatleri: any
+  iptalPolitikasi: string | null
+  iptalEdilebilirMiHesap: { edilebilir: boolean; kalanSaat: number; gerekenSaat: number }
 }
 
 function formatUyeAyYil(iso: string) {
@@ -91,6 +96,53 @@ function formatRezTarih(iso: string) {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
   return d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })
+}
+
+const TR_DAYS = ['Paz', 'Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt']
+
+function iptalEdilebilirMi(
+  rezervasyon: any,
+  tesis: any,
+): { edilebilir: boolean; kalanSaat: number; gerekenSaat: number } {
+  const iptalSaatOncesi =
+    typeof tesis?.iptal_saat_oncesi === 'number'
+      ? tesis.iptal_saat_oncesi
+      : typeof tesis?.iptalSaatOncesi === 'number'
+        ? tesis.iptalSaatOncesi
+        : 24
+
+  if (iptalSaatOncesi >= 999999) {
+    return { edilebilir: false, kalanSaat: 0, gerekenSaat: iptalSaatOncesi }
+  }
+
+  let calismaSaatleri: any[] = []
+  try {
+    const raw = tesis?.calisma_saatleri ?? tesis?.calismaSaatleri
+    calismaSaatleri = Array.isArray(raw) ? raw : typeof raw === 'string' ? JSON.parse(raw) : []
+  } catch {
+    calismaSaatleri = []
+  }
+
+  const baslangicTarih = rezervasyon.baslangic_tarih || rezervasyon.tarih
+  const baslangicDate = new Date(`${baslangicTarih}T00:00:00+03:00`)
+  const dayName = TR_DAYS[baslangicDate.getDay()]
+  const gunData = calismaSaatleri.find((g: any) => g?.name === dayName)
+
+  if (gunData && gunData.kapali === true) {
+    return { edilebilir: false, kalanSaat: 0, gerekenSaat: iptalSaatOncesi }
+  }
+
+  const acilisStr =
+    gunData?.acilis && /^\d{1,2}:\d{2}$/.test(gunData.acilis) ? gunData.acilis : '09:00'
+  const rezervasyonBaslangicDT = new Date(`${baslangicTarih}T${acilisStr}:00+03:00`)
+  const kalanMs = rezervasyonBaslangicDT.getTime() - new Date().getTime()
+  const kalanSaat = kalanMs / (1000 * 60 * 60)
+
+  return {
+    edilebilir: kalanSaat >= iptalSaatOncesi,
+    kalanSaat: Math.max(0, Math.floor(kalanSaat)),
+    gerekenSaat: iptalSaatOncesi,
+  }
 }
 
 function formatTutar(raw: number | string | null | undefined) {
@@ -213,6 +265,7 @@ export default function ProfilScreen() {
   const [cameraPermission, requestCameraPermission] = useCameraPermissions()
   const [showQrScanner, setShowQrScanner] = useState(false)
   const qrHandledRef = useRef(false)
+  const loadingRef = useRef(false)
   const [modalSezlongAktifDegil, setModalSezlongAktifDegil] = useState(false)
   const [modalKodGir, setModalKodGir] = useState(false)
   const [kodInput, setKodInput] = useState('')
@@ -225,6 +278,11 @@ export default function ProfilScreen() {
   const [garsonCagriCooldown, setGarsonCagriCooldown] = useState<Record<string, number>>({})
   const [tick, setTick] = useState(0)
   const [aktifSiparisler, setAktifSiparisler] = useState<any[]>([])
+  const [infoModal, setInfoModal] = useState<{ visible: boolean; baslik: string; mesaj: string } | null>(null)
+  const [confirmModal, setConfirmModal] = useState<{ visible: boolean; baslik: string; mesaj: string; rezervasyon: any } | null>(null)
+  const [iptalLoading, setIptalLoading] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [visibleRezCount, setVisibleRezCount] = useState(10)
   const [gecmisTumSiparisler, setGecmisTumSiparisler] = useState<any[]>([])
   const [gecmisTumLoading, setGecmisTumLoading] = useState(false)
   const [gecmisFilter, setGecmisFilter] = useState<'bugun' | 'hafta' | 'ay' | 'tumu'>('ay')
@@ -330,6 +388,58 @@ export default function ProfilScreen() {
     }
   }
 
+  const onRefresh = async () => {
+    setRefreshing(true)
+    setVisibleRezCount(10)
+    try {
+      await loadProfil()
+    } catch {
+      // sessizce geç
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  async function handleIptalConfirm(rezervasyon: RezRow) {
+    const BASE_URL = process.env.EXPO_PUBLIC_SITE_URL || 'https://myloungers.com'
+    setIptalLoading(true)
+    try {
+      const response = await fetch(`${BASE_URL}/api/paratika/refund`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rezervasyonId: rezervasyon.id }),
+      })
+      const data = await response.json().catch(() => ({}))
+
+      if (!response.ok || !data.success) {
+        setConfirmModal(null)
+        setInfoModal({
+          visible: true,
+          baslik: 'İade Başarısız',
+          mesaj: data.error || 'İade işlemi sırasında bir sorun oluştu. Lütfen daha sonra tekrar deneyin.',
+        })
+        return
+      }
+
+      setConfirmModal(null)
+      setInfoModal({
+        visible: true,
+        baslik: 'Rezervasyon İptal Edildi',
+        mesaj: 'Rezervasyon iptal edildi. Ücret iadeniz 5 iş günü içinde kartınıza yansıyacaktır.',
+      })
+      loadProfil().catch(() => {})
+    } catch (e: any) {
+      setConfirmModal(null)
+      setInfoModal({
+        visible: true,
+        baslik: 'Hata',
+        mesaj: e?.message || 'Beklenmeyen bir hata oluştu.',
+      })
+    } finally {
+      setIptalLoading(false)
+    }
+  }
+
   async function handleCallConfirm() {
     const rez = callModalRez
     setShowCallModal(false)
@@ -383,6 +493,10 @@ export default function ProfilScreen() {
   }
 
   const loadProfil = async () => {
+    if (loadingRef.current) {
+      return
+    }
+    loadingRef.current = true
     try {
       const {
         data: { user },
@@ -394,9 +508,6 @@ export default function ProfilScreen() {
         .select('id, ad, soyad, telefon, email, sehir, dogum_tarihi, rol, created_at')
         .eq('email', user.email)
         .single()
-
-      console.log('KULLANICI DATA:', data)
-      console.log('KULLANICI ERROR:', error)
 
       if (data) {
         const d = data.dogum_tarihi ? data.dogum_tarihi.split('-').reverse().join('.') : ''
@@ -420,22 +531,91 @@ export default function ProfilScreen() {
           dogumTarihi: d,
         })
 
-        const { data: rezData, error: rezError } = await supabase
-          .from('rezervasyonlar')
-          .select(
-            'id, baslangic_tarih, bitis_tarih, sezlong_id, toplam_tutar, bakiye_yuklenen, bakiye_harcanan, bakiye_kalan, durum, tesis_id, rezervasyon_kodu, giris_yapildi, tesisler(ad, fotograflar, sehir, kategori, slug), sezlonglar(numara, grup_id, sezlong_gruplari(ad))',
-          )
-          .eq('kullanici_id', data.id)
-          .in('durum', ['onaylandi', 'aktif', 'tamamlandi', 'iptal', 'iptal_edildi'])
-          .order('baslangic_tarih', { ascending: false })
+        const [rezResult, yorumResult, favResult] = await Promise.all([
+          supabase
+            .from('rezervasyonlar')
+            .select(
+              'id, baslangic_tarih, bitis_tarih, sezlong_id, toplam_tutar, bakiye_yuklenen, bakiye_harcanan, bakiye_kalan, durum, tesis_id, rezervasyon_kodu, giris_yapildi, tesisler(ad, fotograflar, sehir, kategori, slug), sezlonglar(numara, grup_id, sezlong_gruplari(ad))',
+            )
+            .eq('kullanici_id', data.id)
+            .in('durum', ['onaylandi', 'aktif', 'tamamlandi', 'iptal', 'iptal_edildi'])
+            .order('baslangic_tarih', { ascending: false }),
+          supabase
+            .from('yorumlar')
+            .select('id, yorum, puan, created_at, durum, tesisler(ad)')
+            .eq('kullanici_id', data.id)
+            .order('created_at', { ascending: false }),
+          supabase
+            .from('favoriler')
+            .select('id, tesis_id, created_at, tesisler(ad, fotograflar, slug)')
+            .eq('kullanici_id', data.id)
+            .order('created_at', { ascending: false }),
+        ])
 
-        console.log('REZ DATA:', rezData)
-        console.log('REZ ERROR:', rezError)
+        const rezData = rezResult.data
+        const rezError = rezResult.error
 
         if (rezData) {
           const bugun = new Date()
           bugun.setHours(0, 0, 0, 0)
 
+          // ID listelerini rezData'dan çıkar
+          const aktifSezData = rezData.filter((r: any) => {
+            if (r.durum === 'iptal' || r.durum === 'iptal_edildi') return false
+            const baslangic = r.baslangic_tarih ? new Date(r.baslangic_tarih) : null
+            const bitis = r.bitis_tarih ? new Date(r.bitis_tarih) : null
+            if (
+              !baslangic ||
+              Number.isNaN(baslangic.getTime()) ||
+              !bitis ||
+              Number.isNaN(bitis.getTime())
+            ) {
+              return false
+            }
+            baslangic.setHours(0, 0, 0, 0)
+            bitis.setHours(0, 0, 0, 0)
+            return baslangic <= bugun && bitis >= bugun
+          })
+
+          const sezlongIds = aktifSezData.map((r: any) => r.sezlong_id).filter(Boolean)
+          const uniqTesisIds = Array.from(new Set(rezData.map((r: any) => r.tesis_id).filter(Boolean))) as string[]
+
+          // sezlonglar + tesis politikaları paralel çek
+          const [sezlongResult, tesisPolitikaResult] = await Promise.all([
+            sezlongIds.length > 0
+              ? supabase
+                  .from('sezlonglar')
+                  .select('id, no, numara, grup_id, sezlong_gruplari(ad)')
+                  .in('id', sezlongIds)
+              : Promise.resolve({ data: [] as any[] }),
+            uniqTesisIds.length > 0
+              ? supabase
+                  .from('tesisler')
+                  .select('id, iptal_saat_oncesi, calisma_saatleri, iptal_politikasi')
+                  .in('id', uniqTesisIds)
+              : Promise.resolve({ data: [] as any[] }),
+          ])
+
+          // sezlongMap oluştur
+          const sezlongMap: Record<string, string> = {}
+          if (Array.isArray(sezlongResult.data)) {
+            sezlongResult.data.forEach((s: any) => {
+              const grupAd = s.sezlong_gruplari?.ad ?? ''
+              const no = s.no || s.numara || ''
+              const prefix = grupAd ? grupAd.charAt(0).toUpperCase() : ''
+              sezlongMap[s.id] = grupAd ? `${grupAd} - ${prefix}${no}` : `${prefix}${no}`
+            })
+          }
+
+          // tesisPolitikaMap oluştur (key: tesis UUID)
+          const tesisPolitikaMap: Record<string, any> = {}
+          if (Array.isArray(tesisPolitikaResult.data)) {
+            tesisPolitikaResult.data.forEach((t: any) => {
+              if (t?.id) tesisPolitikaMap[t.id] = t
+            })
+          }
+
+          // setRezervasyonlar: tek geçişte tüm verilerle
           setRezervasyonlar(
             rezData.map((r: any) => {
               const foto = r.tesisler?.fotograflar?.[0]
@@ -514,9 +694,14 @@ export default function ProfilScreen() {
                 kategori: kategoriLabel,
                 tesisSlug: r.tesisler?.slug ?? '',
                 sezlongLabel,
+                iptalSaatOncesi: tesisPolitikaMap[r.tesis_id]?.iptal_saat_oncesi ?? null,
+                calismaSaatleri: tesisPolitikaMap[r.tesis_id]?.calisma_saatleri ?? null,
+                iptalPolitikasi: tesisPolitikaMap[r.tesis_id]?.iptal_politikasi ?? null,
+                iptalEdilebilirMiHesap: iptalEdilebilirMi(r, tesisPolitikaMap[r.tesis_id] ?? {}),
               }
             }),
           )
+
           const toplam = (rezData ?? []).reduce((acc: number, r: any) => {
             if (r.durum === 'iptal' || r.durum === 'iptal_edildi') return acc
             return acc + (Number(r.toplam_tutar) || 0)
@@ -536,62 +721,22 @@ export default function ProfilScreen() {
             return acc + (Number(r.bakiye_kalan) || 0)
           }, 0)
           setToplamKalanBakiye(toplamKalan)
-
-          const aktifSezData = rezData.filter((r: any) => {
-            if (r.durum === 'iptal' || r.durum === 'iptal_edildi') return false
-            const baslangic = r.baslangic_tarih ? new Date(r.baslangic_tarih) : null
-            const bitis = r.bitis_tarih ? new Date(r.bitis_tarih) : null
-            if (
-              !baslangic ||
-              Number.isNaN(baslangic.getTime()) ||
-              !bitis ||
-              Number.isNaN(bitis.getTime())
-            ) {
-              return false
-            }
-            baslangic.setHours(0, 0, 0, 0)
-            bitis.setHours(0, 0, 0, 0)
-            return baslangic <= bugun && bitis >= bugun
-          })
           setAktifSezlonglar(aktifSezData)
-          const sezlongIds = aktifSezData.map((r: any) => r.sezlong_id).filter(Boolean)
-          let sezlongMap: Record<string, string> = {}
-          if (sezlongIds.length > 0) {
-            const { data: sezData } = await supabase
-              .from('sezlonglar')
-              .select('id, no, numara, grup_id, sezlong_gruplari(ad)')
-              .in('id', sezlongIds)
-            if (sezData) {
-              sezData.forEach((s: any) => {
-                const grupAd = s.sezlong_gruplari?.ad ?? ''
-                const no = s.no || s.numara || ''
-                const prefix = grupAd ? grupAd.charAt(0).toUpperCase() : ''
-                sezlongMap[s.id] = grupAd ? `${grupAd} - ${prefix}${no}` : `${prefix}${no}`
-              })
-            }
-          }
           setSezlongMap(sezlongMap)
+        } else {
         }
 
-        const { data: yorumData } = await supabase
-          .from('yorumlar')
-          .select('id, yorum, puan, created_at, durum, tesisler(ad)')
-          .eq('kullanici_id', data.id)
-          .order('created_at', { ascending: false })
+        const yorumData = yorumResult.data
         if (yorumData) setYorumlar(yorumData)
 
-        const { data: favData } = await supabase
-          .from('favoriler')
-          .select('id, tesis_id, created_at, tesisler(ad, fotograflar, slug)')
-          .eq('kullanici_id', data.id)
-          .order('created_at', { ascending: false })
+        const favData = favResult.data
         if (favData) setFavoriler(favData)
 
       }
     } catch (e) {
-      console.log('LOAD PROFIL HATA:', e)
     } finally {
       setLoading(false)
+      loadingRef.current = false
     }
   }
 
@@ -919,6 +1064,14 @@ export default function ProfilScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#0EA5A4']}
+            tintColor="#0EA5A4"
+          />
+        }
       >
         <View style={styles.header}>
           <View style={styles.headerTopRow}>
@@ -1434,7 +1587,7 @@ export default function ProfilScreen() {
             {filtrelenmisRez.length === 0 ? (
               <Text style={styles.bosListe}>Bu filtrede rezervasyon yok.</Text>
             ) : (
-              filtrelenmisRez.map((r) => {
+              filtrelenmisRez.slice(0, visibleRezCount).map((r) => {
                 const dc = rezDurumBadgeColors(r.durum)
                 return (
                   <View key={r.id} style={styles.rezWebCard}>
@@ -1500,12 +1653,41 @@ export default function ProfilScreen() {
                       </View>
                     </View>
                     <View style={styles.rezWebBtnRow}>
-                      <TouchableOpacity
-                        style={[styles.btnIptal, { backgroundColor: '#0A1628', borderColor: '#0A1628' }]}
-                        activeOpacity={0.85}
-                      >
-                        <Text style={[styles.btnIptalText, { color: '#fff', fontWeight: '700' }]}>İptal Et</Text>
-                      </TouchableOpacity>
+                      {(() => {
+                        const iptalSonuc = r.iptalEdilebilirMiHesap ?? { edilebilir: false, kalanSaat: 0, gerekenSaat: 24 }
+                        const gri = !iptalSonuc.edilebilir
+                        return (
+                          <TouchableOpacity
+                            style={[
+                              styles.btnIptal,
+                              gri
+                                ? { backgroundColor: '#9CA3AF', borderColor: '#9CA3AF', opacity: 0.7 }
+                                : { backgroundColor: '#dc2626', borderColor: '#dc2626' },
+                            ]}
+                            activeOpacity={0.85}
+                            onPress={() => {
+                              if (gri) {
+                                setInfoModal({
+                                  visible: true,
+                                  baslik: 'İptal Yapılamıyor',
+                                  mesaj: `Bu rezervasyon için iptal süresi dolmuştur. Tesisin politikasına göre iptal işlemi en az ${iptalSonuc.gerekenSaat} saat önce yapılmalıydı. Lütfen tesis ile iletişime geçin.`,
+                                })
+                              } else {
+                                setConfirmModal({
+                                  visible: true,
+                                  baslik: 'Rezervasyonu İptal Et',
+                                  mesaj: 'Bu rezervasyonu iptal etmek istediğinize emin misiniz? İptal işlemi geri alınamaz ve ücret iadeniz başlatılır. Ödemeniz 5 iş günü içinde kartınıza iade edilecektir.',
+                                  rezervasyon: r,
+                                })
+                              }
+                            }}
+                          >
+                            <Text style={[styles.btnIptalText, { color: '#fff', fontWeight: '700' }]}>
+                              İptal Et
+                            </Text>
+                          </TouchableOpacity>
+                        )
+                      })()}
                       <TouchableOpacity
                         style={[styles.btnTesiseGit, { backgroundColor: '#f97316' }]}
                         activeOpacity={0.85}
@@ -1519,6 +1701,25 @@ export default function ProfilScreen() {
                   </View>
                 )
               })
+            )}
+            {filtrelenmisRez.length > visibleRezCount && (
+              <TouchableOpacity
+                style={{
+                  marginTop: 12,
+                  marginBottom: 12,
+                  paddingVertical: 14,
+                  borderWidth: 1,
+                  borderColor: '#0EA5A4',
+                  borderRadius: 12,
+                  alignItems: 'center',
+                  backgroundColor: '#fff',
+                }}
+                onPress={() => setVisibleRezCount((prev) => prev + 10)}
+              >
+                <Text style={{ color: '#0EA5A4', fontWeight: '600', fontSize: 14 }}>
+                  Daha Fazla Göster ({filtrelenmisRez.length - visibleRezCount} adet kaldı)
+                </Text>
+              </TouchableOpacity>
             )}
             </View>
           </>
@@ -2453,6 +2654,169 @@ export default function ProfilScreen() {
           </View>
         </View>
       )}
+      {/* INFO MODAL */}
+      <Modal
+        visible={infoModal?.visible || false}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setInfoModal(null)}
+      >
+        <View style={{
+          flex: 1,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: 24,
+        }}>
+          <View style={{
+            backgroundColor: '#fff',
+            borderRadius: 16,
+            padding: 24,
+            width: '100%',
+            maxWidth: 360,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.25,
+            shadowRadius: 12,
+            elevation: 8,
+          }}>
+            <View style={{ alignItems: 'center', marginBottom: 16 }}>
+              <View style={{
+                width: 56,
+                height: 56,
+                borderRadius: 28,
+                backgroundColor: '#FEF3C7',
+                justifyContent: 'center',
+                alignItems: 'center',
+                marginBottom: 12,
+              }}>
+                <Text style={{ fontSize: 28 }}>⚠️</Text>
+              </View>
+              <Text style={{
+                fontSize: 18,
+                fontWeight: '700',
+                color: '#111827',
+                textAlign: 'center',
+              }}>
+                {infoModal?.baslik || ''}
+              </Text>
+            </View>
+            <Text style={{
+              fontSize: 14,
+              color: '#4B5563',
+              lineHeight: 20,
+              textAlign: 'center',
+              marginBottom: 20,
+            }}>
+              {infoModal?.mesaj || ''}
+            </Text>
+            <TouchableOpacity
+              onPress={() => setInfoModal(null)}
+              style={{
+                backgroundColor: '#0EA5A4',
+                paddingVertical: 12,
+                borderRadius: 10,
+                alignItems: 'center',
+              }}
+              activeOpacity={0.85}
+            >
+              <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>Tamam</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+      {/* CONFIRM MODAL */}
+      <Modal
+        visible={confirmModal?.visible || false}
+        transparent
+        animationType="fade"
+        onRequestClose={() => { if (!iptalLoading) setConfirmModal(null) }}
+      >
+        <View style={{
+          flex: 1,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: 24,
+        }}>
+          <View style={{
+            backgroundColor: '#fff',
+            borderRadius: 16,
+            padding: 24,
+            width: '100%',
+            maxWidth: 360,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.25,
+            shadowRadius: 12,
+            elevation: 8,
+          }}>
+            <View style={{ alignItems: 'center', marginBottom: 16 }}>
+              <View style={{
+                width: 56,
+                height: 56,
+                borderRadius: 28,
+                backgroundColor: '#FEE2E2',
+                justifyContent: 'center',
+                alignItems: 'center',
+                marginBottom: 12,
+              }}>
+                <Text style={{ fontSize: 28 }}>❓</Text>
+              </View>
+              <Text style={{
+                fontSize: 18,
+                fontWeight: '700',
+                color: '#111827',
+                textAlign: 'center',
+              }}>
+                {confirmModal?.baslik || ''}
+              </Text>
+            </View>
+            <Text style={{
+              fontSize: 14,
+              color: '#4B5563',
+              lineHeight: 20,
+              textAlign: 'center',
+              marginBottom: 20,
+            }}>
+              {confirmModal?.mesaj || ''}
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <TouchableOpacity
+                onPress={() => { if (!iptalLoading) setConfirmModal(null) }}
+                disabled={iptalLoading}
+                style={{
+                  flex: 1,
+                  backgroundColor: '#F3F4F6',
+                  paddingVertical: 12,
+                  borderRadius: 10,
+                  alignItems: 'center',
+                  opacity: iptalLoading ? 0.5 : 1,
+                }}
+                activeOpacity={0.85}
+              >
+                <Text style={{ color: '#374151', fontSize: 15, fontWeight: '700' }}>Vazgeç</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => confirmModal?.rezervasyon && handleIptalConfirm(confirmModal.rezervasyon)}
+                disabled={iptalLoading}
+                style={{
+                  flex: 1,
+                  backgroundColor: iptalLoading ? '#9CA3AF' : '#dc2626',
+                  paddingVertical: 12,
+                  borderRadius: 10,
+                  alignItems: 'center',
+                }}
+                activeOpacity={0.85}
+              >
+                <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>
+                  {iptalLoading ? 'İptal ediliyor...' : 'Evet, İptal Et'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   )
 }
