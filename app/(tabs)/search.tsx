@@ -9,6 +9,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -210,6 +211,7 @@ export default function SearchScreen() {
   const [showTypeModal, setShowTypeModal] = useState(false)
   const [searchResults, setSearchResults] = useState<TesisRow[]>([])
   const [loading, setLoading] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
 
   const [filterTab, setFilterTab] = useState<'all' | 'hotel' | 'beach' | 'aqua'>('all')
   const [kisiSayisi, setKisiSayisi] = useState<number | null>(null)
@@ -271,18 +273,13 @@ export default function SearchScreen() {
     if (!gpsKonum) {
       const reg = region.trim()
       if (reg.includes(',')) {
-        const parts = reg.split(',').map((s) => s.trim())
-        const ilcePart = parts[0]
-        const sehirPart = parts[1]
-        if (ilcePart) {
-          out = out.filter(
-            (row) => row.ilce != null && String(row.ilce).toLowerCase().includes(ilcePart.toLowerCase()),
-          )
-        }
-        if (sehirPart) {
-          out = out.filter(
-            (row) => row.sehir != null && String(row.sehir).toLowerCase().includes(sehirPart.toLowerCase()),
-          )
+        const parts = reg.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
+        if (parts.length > 0) {
+          out = out.filter((row) => {
+            const sehir = row.sehir ? String(row.sehir).toLowerCase() : ''
+            const ilce = row.ilce ? String(row.ilce).toLowerCase() : ''
+            return parts.some((p) => sehir.includes(p) || ilce.includes(p))
+          })
         }
       } else if (reg) {
         const safe = reg.replace(/%/g, '').toLowerCase()
@@ -317,6 +314,35 @@ export default function SearchScreen() {
     }
     setSearchResults(out)
   }, [region, facilityName, facilityTypeKey, mesafe, gpsKonum])
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true)
+    setGpsKonum(null)
+    setGpsLoading(false)
+    setMesafe(10)
+    setFilterTab('all')
+    setFacilityName('')
+    setFacilityTypeKey(null)
+    const selectBase = 'id, ad, slug, kategori, kategoriler, sehir, ilce, fotograflar, puan, imkanlar'
+    const { data, error } = await supabase
+      .from('tesisler')
+      .select(`${selectBase}, enlem, boylam`)
+      .order('puan', { ascending: false })
+    let rows: TesisRow[] = []
+    if (!error && data) {
+      rows = data as TesisRow[]
+    } else {
+      const r2 = await supabase
+        .from('tesisler')
+        .select(selectBase)
+        .order('puan', { ascending: false })
+      if (!r2.error && r2.data) {
+        rows = r2.data as TesisRow[]
+      }
+    }
+    setSearchResults(rows)
+    setRefreshing(false)
+  }, [])
 
   useEffect(() => {
     void runSearch()
@@ -784,6 +810,9 @@ export default function SearchScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         nestedScrollEnabled
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#0ABAB5']} tintColor="#0ABAB5" />
+        }
       >
         <View style={styles.fieldRow}>
           <Ionicons name="map-outline" size={20} color="#0A1628" />
