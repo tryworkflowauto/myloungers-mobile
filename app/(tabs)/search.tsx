@@ -25,13 +25,14 @@ export type TesisRow = {
   ad: string
   slug: string
   kategori?: string | string[] | null
+  kategoriler?: string[] | string | null
   sehir: string | null
   ilce: string | null
   fotograflar: unknown
   puan: number | null
   imkanlar: unknown
-  lat?: number | null
-  lon?: number | null
+  enlem?: number | null
+  boylam?: number | null
 }
 
 const WEEKDAY_LABELS_TR = ['P', 'S', 'Ç', 'P', 'C', 'C', 'P'] as const
@@ -101,15 +102,53 @@ function paramString(v: string | string[] | undefined): string {
 }
 
 function getKategori(r: TesisRow): string[] {
-  if (Array.isArray(r.kategori)) return r.kategori
-  if (typeof r.kategori === 'string') {
+  // Önce kategoriler (jsonb array) kolonunu dene
+  const cats = r.kategoriler
+  let sonuc: string[]
+  if (Array.isArray(cats) && cats.length > 0) {
+    sonuc = cats.map(String)
+  } else if (typeof cats === 'string') {
     try {
-      return JSON.parse(r.kategori)
+      const parsed = JSON.parse(cats) as unknown
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        sonuc = (parsed as unknown[]).map(String)
+      } else {
+        sonuc = []
+      }
     } catch {
-      return []
+      sonuc = []
+    }
+    if (sonuc.length === 0) {
+      // Fallback: eski kategori kolonu
+      if (Array.isArray(r.kategori)) {
+        sonuc = (r.kategori as unknown[]).map(String)
+      } else if (typeof r.kategori === 'string') {
+        try {
+          const parsed = JSON.parse(r.kategori) as unknown
+          sonuc = Array.isArray(parsed) ? (parsed as unknown[]).map(String) : []
+        } catch {
+          sonuc = []
+        }
+      } else {
+        sonuc = []
+      }
+    }
+  } else {
+    // Fallback: eski kategori kolonu
+    if (Array.isArray(r.kategori)) {
+      sonuc = (r.kategori as unknown[]).map(String)
+    } else if (typeof r.kategori === 'string') {
+      try {
+        const parsed = JSON.parse(r.kategori) as unknown
+        sonuc = Array.isArray(parsed) ? (parsed as unknown[]).map(String) : []
+      } catch {
+        sonuc = []
+      }
+    } else {
+      sonuc = []
     }
   }
-  return []
+  return sonuc
 }
 
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -213,8 +252,8 @@ export default function SearchScreen() {
       return supabase.from('tesisler').select(selectCols).order('puan', { ascending: false })
     }
 
-    const selectBase = 'id, ad, slug, kategori, sehir, ilce, fotograflar, puan, imkanlar'
-    let { data, error } = await runQuery(`${selectBase}, lat, lon`)
+    const selectBase = 'id, ad, slug, kategori, kategoriler, sehir, ilce, fotograflar, puan, imkanlar'
+    let { data, error } = await runQuery(`${selectBase}, enlem, boylam`)
     let hasLatLonCols = true
     if (error) {
       const r2 = await runQuery(selectBase)
@@ -229,28 +268,30 @@ export default function SearchScreen() {
     setLoading(false)
     let out = (data as TesisRow[]) ?? []
 
-    const reg = region.trim()
-    if (reg.includes(',')) {
-      const parts = reg.split(',').map((s) => s.trim())
-      const ilcePart = parts[0]
-      const sehirPart = parts[1]
-      if (ilcePart) {
-        out = out.filter(
-          (row) => row.ilce != null && String(row.ilce).toLowerCase().includes(ilcePart.toLowerCase()),
-        )
+    if (!gpsKonum) {
+      const reg = region.trim()
+      if (reg.includes(',')) {
+        const parts = reg.split(',').map((s) => s.trim())
+        const ilcePart = parts[0]
+        const sehirPart = parts[1]
+        if (ilcePart) {
+          out = out.filter(
+            (row) => row.ilce != null && String(row.ilce).toLowerCase().includes(ilcePart.toLowerCase()),
+          )
+        }
+        if (sehirPart) {
+          out = out.filter(
+            (row) => row.sehir != null && String(row.sehir).toLowerCase().includes(sehirPart.toLowerCase()),
+          )
+        }
+      } else if (reg) {
+        const safe = reg.replace(/%/g, '').toLowerCase()
+        out = out.filter((row) => {
+          const sehir = row.sehir ? String(row.sehir).toLowerCase() : ''
+          const ilce = row.ilce ? String(row.ilce).toLowerCase() : ''
+          return sehir.includes(safe) || ilce.includes(safe)
+        })
       }
-      if (sehirPart) {
-        out = out.filter(
-          (row) => row.sehir != null && String(row.sehir).toLowerCase().includes(sehirPart.toLowerCase()),
-        )
-      }
-    } else if (reg) {
-      const safe = reg.replace(/%/g, '').toLowerCase()
-      out = out.filter((row) => {
-        const sehir = row.sehir ? String(row.sehir).toLowerCase() : ''
-        const ilce = row.ilce ? String(row.ilce).toLowerCase() : ''
-        return sehir.includes(safe) || ilce.includes(safe)
-      })
     }
     if (facilityName.trim()) {
       const qn = facilityName.trim().toLowerCase()
@@ -265,8 +306,8 @@ export default function SearchScreen() {
     }
     if (gpsKonum && hasLatLonCols) {
       out = out.filter((row) => {
-        const lat = row.lat
-        const lon = row.lon
+        const lat = row.enlem
+        const lon = row.boylam
         if (lat == null || lon == null) return true
         const la = Number(lat)
         const lo = Number(lon)

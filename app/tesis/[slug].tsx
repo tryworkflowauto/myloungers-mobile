@@ -750,8 +750,8 @@ export default function TesisDetailScreen() {
                   import('expo-linking').then((Linking) => {
                     const url =
                       row.enlem != null && row.boylam != null
-                        ? `https://maps.google.com/?q=${row.enlem},${row.boylam}`
-                        : `https://maps.google.com/?q=${encodeURIComponent(row.adres ?? '')}`
+                        ? `https://www.google.com/maps/dir/?api=1&destination=${row.enlem},${row.boylam}`
+                        : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(row.adres ?? '')}`
                     Linking.openURL(url)
                   })
                 }}
