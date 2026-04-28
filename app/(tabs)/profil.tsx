@@ -289,6 +289,10 @@ export default function ProfilScreen() {
   const [aktifSiparislerLoading, setAktifSiparislerLoading] = useState(false)
   const [cagriToast, setCagriToast] = useState<{ visible: boolean; mesaj: string }>({ visible: false, mesaj: '' })
 
+  const fetchAktifCagrilarRef = useRef<(() => void) | null>(null)
+  const fetchBildirimlerRef = useRef<(() => void) | null>(null)
+  const fetchSiparislerRef = useRef<(() => void) | null>(null)
+
   const onQrBarcodeScanned = useCallback((result: { data: string }) => {
     if (qrHandledRef.current) return
     qrHandledRef.current = true
@@ -833,28 +837,35 @@ export default function ProfilScreen() {
       setBildirimler(data ?? [])
     }
 
+    fetchAktifCagrilarRef.current = fetchAktifCagrilar
+    fetchBildirimlerRef.current = fetchBildirimler
     fetchAktifCagrilar()
     fetchBildirimler()
+  }, [profil, rezervasyonlar])
 
-    const channel = supabase
-      .channel(`musteri-cagri-${profil.id}`)
+  // Cagri realtime channel — sadece profil.id değişince yeniden kurulur
+  // Benzersiz suffix: supabase.channel() aynı isimde mevcut (subscribed) kanalı döndürür
+  // (v2.101.1 deduplication), unique suffix her run'da yeni instance garantiler
+  useEffect(() => {
+    if (!profil?.id) return
+    const uid = Math.random().toString(36).slice(2)
+    const cagriChannel = supabase
+      .channel(`musteri-cagri-${profil.id}-${uid}`)
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'bildirimler' },
         (payload) => {
-          const updated = payload.new as any
-          if (updated && rezIds.includes(String(updated.rezervasyon_id))) {
-            fetchAktifCagrilar()
-            fetchBildirimler()
+          if (payload.new) {
+            void fetchAktifCagrilarRef.current?.()
+            void fetchBildirimlerRef.current?.()
           }
         },
       )
       .subscribe()
-
     return () => {
-      supabase.removeChannel(channel)
+      void supabase.removeChannel(cagriChannel)
     }
-  }, [profil, rezervasyonlar])
+  }, [profil?.id])
 
   useEffect(() => {
     if (!profil?.id) return
@@ -925,11 +936,17 @@ export default function ProfilScreen() {
       setGecmisTumLoading(false)
     }
 
+    fetchSiparislerRef.current = fetchSiparisler
     fetchSiparisler()
+  }, [profil?.id, gecmisFilter])
 
-    // Realtime subscription for siparis durum değişiklikleri
-    const channel = supabase
-      .channel(`musteri-siparis-${profil.id}`)
+  // Siparis realtime channel — sadece profil.id değişince yeniden kurulur
+  // Benzersiz suffix: supabase.channel() deduplication'ı önlemek için
+  useEffect(() => {
+    if (!profil?.id) return
+    const uid = Math.random().toString(36).slice(2)
+    const siparisChannel = supabase
+      .channel(`musteri-siparis-${profil.id}-${uid}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'siparisler' },
@@ -941,15 +958,14 @@ export default function ProfilScreen() {
           if (yeniDurum === SIPARIS_DURUM.HAZIR && eskiDurum !== SIPARIS_DURUM.HAZIR) {
             playHazirSesi()
           }
-          fetchSiparisler()
+          void fetchSiparislerRef.current?.()
         },
       )
       .subscribe()
-
     return () => {
-      supabase.removeChannel(channel)
+      void supabase.removeChannel(siparisChannel)
     }
-  }, [profil?.id, gecmisFilter])
+  }, [profil?.id])
 
   const avatarHarf = useMemo(() => {
     const t = (profil?.ad ?? '').trim()

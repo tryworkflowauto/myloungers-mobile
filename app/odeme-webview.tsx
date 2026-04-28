@@ -1,15 +1,81 @@
 import { Ionicons } from '@expo/vector-icons'
 import { useLocalSearchParams, useRouter } from 'expo-router'
+import { useEffect, useRef } from 'react'
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { WebView } from 'react-native-webview'
+import { supabase } from '../lib/supabase'
 
 const TEAL = '#0d9488'
 
 export default function OdemeWebview() {
   const router = useRouter()
-  const { token } = useLocalSearchParams<{ token?: string }>()
+  const { token, rezervasyon_id } = useLocalSearchParams<{ token?: string; rezervasyon_id?: string }>()
   const uri = token ? `https://vpos.paratika.com.tr/payment/${String(token)}` : ''
+  const rezId = rezervasyon_id ? String(rezervasyon_id) : ''
+
+  // Guard: realtime, polling ve URL handler'larından ilk tetiklenen navigate eder, diğerleri pas geçer
+  const navigatedRef = useRef(false)
+  function goToProfile() {
+    if (navigatedRef.current) return
+    navigatedRef.current = true
+    router.replace('/(tabs)/profil')
+  }
+
+  // Katman 1 — Realtime: Supabase publication varsa anlık yönlendirir
+  useEffect(() => {
+    if (!rezId) return
+    const uid = Math.random().toString(36).slice(2)
+    const channel = supabase
+      .channel(`odeme-bekleme-${rezId}-${uid}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'rezervasyonlar',
+          filter: `id=eq.${rezId}`,
+        },
+        (payload) => {
+          if ((payload.new as { durum?: string })?.durum === 'aktif') {
+            goToProfile()
+          }
+        },
+      )
+      .subscribe()
+    return () => {
+      void supabase.removeChannel(channel)
+    }
+  }, [rezId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Katman 2 — Polling: Her 2 saniyede DB'yi sorgula (RLS/publication bağımsız, %100 çalışır)
+  useEffect(() => {
+    if (!rezId) return
+    let stopped = false
+    const interval = setInterval(async () => {
+      if (stopped) return
+      const { data, error } = await supabase
+        .from('rezervasyonlar')
+        .select('durum')
+        .eq('id', rezId)
+        .single()
+      if (!error && (data as { durum?: string } | null)?.durum === 'aktif') {
+        stopped = true
+        clearInterval(interval)
+        goToProfile()
+      }
+    }, 2000)
+    // 5 dakika sonra otomatik dur
+    const timeout = setTimeout(() => {
+      stopped = true
+      clearInterval(interval)
+    }, 300000)
+    return () => {
+      stopped = true
+      clearInterval(interval)
+      clearTimeout(timeout)
+    }
+  }, [rezId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -28,15 +94,15 @@ export default function OdemeWebview() {
           renderLoading={() => <ActivityIndicator style={styles.loader} size="large" color={TEAL} />}
           onNavigationStateChange={(navState) => {
             if (navState.url && navState.url.includes('myloungers.com/profil')) {
-              router.replace('/(tabs)/profil')
+              goToProfile()
             }
             if (navState.url && navState.url.includes('myloungers.com/rezervasyon-basarili')) {
-              router.replace('/(tabs)/profil')
+              goToProfile()
             }
           }}
           onShouldStartLoadWithRequest={(request) => {
             if (request.url.includes('myloungers.com/profil')) {
-              router.replace('/(tabs)/profil')
+              goToProfile()
               return false
             }
             return true

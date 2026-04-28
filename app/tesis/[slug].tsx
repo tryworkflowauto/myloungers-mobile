@@ -290,8 +290,12 @@ export default function TesisDetailScreen() {
   const [yorumSayisi, setYorumSayisi] = useState(0)
   const [gruplar, setGruplar] = useState<GrupRow[]>([])
   const [sezlonglar, setSezlonglar] = useState<SezlongRow[]>([])
-  const [rezerveIdsForDate, setRezeveIdsForDate] = useState<Set<string>>(new Set())
+  const [rezervedByType, setRezervedByType] = useState<{
+    dolu: Set<string>; rezerve: Set<string>; bakim: Set<string>; kilitli: Set<string>
+  }>({ dolu: new Set(), rezerve: new Set(), bakim: new Set(), kilitli: new Set() })
   const [secilenSezlongIds, setSecilenSezlongIds] = useState<Set<string>>(new Set())
+  const [paxCount, setPaxCount] = useState(1)
+  const [paxUyariVisible, setPaxUyariVisible] = useState(false)
   const [secilenTarih, setSecilenTarih] = useState<Date | null>(null)
   const [tarihUyariGoster, setTarihUyariGoster] = useState(false)
   const [showPlanDatePicker, setShowPlanDatePicker] = useState(false)
@@ -485,19 +489,43 @@ export default function TesisDetailScreen() {
   useEffect(() => {
     if (!row?.id) return
     if (!secilenTarih) {
-      setRezeveIdsForDate(new Set())
+      setRezervedByType({ dolu: new Set(), rezerve: new Set(), bakim: new Set(), kilitli: new Set() })
       return
     }
     const tarihStr = secilenTarih.toISOString().split('T')[0]
     void supabase
       .from('rezervasyonlar')
-      .select('sezlong_id')
+      .select('sezlong_id, sezlong_ids, musteri_adi')
       .eq('tesis_id', row.id)
       .lte('baslangic_tarih', tarihStr)
       .gte('bitis_tarih', tarihStr)
-      .in('durum', ['onaylandi', 'beklemede'])
+      .in('durum', ['aktif', 'onaylandi'])
       .then(({ data }) => {
-        if (data) setRezeveIdsForDate(new Set(data.map((r: { sezlong_id: string }) => r.sezlong_id)))
+        if (!data) return
+        const newByType = {
+          rezerve: new Set<string>(),
+          bakim: new Set<string>(),
+          kilitli: new Set<string>(),
+          dolu: new Set<string>(),
+        }
+        for (const r of data as { sezlong_id: string | null; sezlong_ids: string[] | null; musteri_adi: string | null }[]) {
+          // Her iki alandan UUID'leri topla (eski tek-satır + yeni döngülü INSERT)
+          const ids = new Set<string>()
+          if (r.sezlong_id) ids.add(r.sezlong_id)
+          if (Array.isArray(r.sezlong_ids)) {
+            for (const id of r.sezlong_ids) {
+              if (id && typeof id === 'string') ids.add(id)
+            }
+          }
+          // musteri_adi'na göre kategorize et (web ile aynı mantık)
+          const musteriAdi = (r.musteri_adi ?? '').toUpperCase()
+          let tip: keyof typeof newByType = 'dolu'
+          if (musteriAdi === 'İŞLETME REZERVİ') tip = 'rezerve'
+          else if (musteriAdi === 'BAKIM') tip = 'bakim'
+          else if (musteriAdi === 'İŞLETME KİLİDİ') tip = 'kilitli'
+          ids.forEach((id) => newByType[tip].add(id))
+        }
+        setRezervedByType(newByType)
       })
   }, [row?.id, secilenTarih])
 
@@ -968,9 +996,9 @@ export default function TesisDetailScreen() {
               <View
                 style={{
                   flexDirection: 'row',
-                  gap: 10,
+                  gap: 6,
                   marginBottom: 16,
-                  flexWrap: 'nowrap',
+                  flexWrap: 'wrap',
                   justifyContent: 'space-between',
                 }}
               >
@@ -978,7 +1006,8 @@ export default function TesisDetailScreen() {
                   { renk: '#22c55e', label: 'Boş' },
                   { renk: '#f97316', label: 'Dolu' },
                   { renk: '#3b82f6', label: 'Rezerve' },
-                  { renk: '#e2e8f0', label: 'Bakım' },
+                  { renk: '#94a3b8', label: 'Bakım' },
+                  { renk: '#7c3aed', label: 'Kilitli' },
                   { renk: '#0ABAB5', label: 'Seçimim' },
                 ].map((item) => (
                   <View key={item.label} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
@@ -1033,13 +1062,49 @@ export default function TesisDetailScreen() {
                 </View>
               </View>
 
+              {/* Kişi sayısı seçici */}
+              <View style={styles.paxRow}>
+                <View style={styles.paxLabelWrap}>
+                  <Text style={styles.paxLabel}>👥 Kişi Sayısı</Text>
+                  <Text style={styles.paxSub}>Maks. 5 · Her kişi 1 şezlong</Text>
+                </View>
+                <View style={styles.paxControls}>
+                  <TouchableOpacity
+                    style={[styles.paxBtn, paxCount === 1 && styles.paxBtnDisabled]}
+                    onPress={() => {
+                      setPaxCount((p) => Math.max(1, p - 1))
+                      setSecilenSezlongIds((prev) => {
+                        const arr = [...prev]
+                        return new Set(arr.slice(0, Math.max(1, prev.size - 1)))
+                      })
+                    }}
+                    disabled={paxCount === 1}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.paxBtnText}>−</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.paxCount}>{paxCount}</Text>
+                  <TouchableOpacity
+                    style={[styles.paxBtn, paxCount === 5 && styles.paxBtnDisabled]}
+                    onPress={() => setPaxCount((p) => Math.min(5, p + 1))}
+                    disabled={paxCount === 5}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.paxBtnText}>+</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
               {gruplar.map((grup) => {
                 const grupSezlonglar = sezlonglar.filter((s) => s.grup_id === grup.id).sort((a, b) => a.numara - b.numara)
                 if (grupSezlonglar.length === 0) return null
                 const fiyat = grup.fiyat ?? grup.fiyat_hafici
                 const toplamSezlong = grupSezlonglar.length
                 const doluSezlong = grupSezlonglar.filter(
-                  (s) => s.durum === 'dolu' || s.durum === 'rezerve' || rezerveIdsForDate.has(s.id),
+                  (s) =>
+                    s.durum === 'dolu' || s.durum === 'rezerve' || s.durum === 'bakim' || s.durum === 'kilitli' ||
+                    rezervedByType.dolu.has(s.id) || rezervedByType.rezerve.has(s.id) ||
+                    rezervedByType.bakim.has(s.id) || rezervedByType.kilitli.has(s.id),
                 ).length
                 const dolulukYuzde =
                   toplamSezlong > 0 ? Math.round((doluSezlong / toplamSezlong) * 100) : 0
@@ -1084,21 +1149,28 @@ export default function TesisDetailScreen() {
                     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>
                       {grupSezlonglar.map((s) => {
                         const secili = secilenSezlongIds.has(s.id)
-                        const isRezerve = rezerveIdsForDate.has(s.id) || s.durum === 'rezerve'
-                        const isDolu = s.durum === 'dolu'
-                        const isBakim = s.durum === 'bakim'
-                        const isKilitli = s.durum === 'kilitli'
+                        // rezervasyonlar tablosundan gelen durum-bazlı Set'ler
+                        const isDbDolu = rezervedByType.dolu.has(s.id)
+                        const isDbRezeve = rezervedByType.rezerve.has(s.id)
+                        const isDbBakim = rezervedByType.bakim.has(s.id)
+                        const isDbKilitli = rezervedByType.kilitli.has(s.id)
+                        // sezlonglar tablosundaki statik durum + DB kayıtları birleştir
+                        const isDolu = isDbDolu || s.durum === 'dolu'
+                        const isRezerve = isDbRezeve || s.durum === 'rezerve'
+                        const isBakim = isDbBakim || s.durum === 'bakim'
+                        const isKilitli = isDbKilitli || s.durum === 'kilitli'
+                        // Web SZL_ST ile uyumlu renk önceliği: rezerve > bakim > kilitli > dolu > boş
                         const bgColor = secili
-                          ? '#0ABAB5'
+                          ? '#0ABAB5'   // Seçimim – turkuaz
                           : isRezerve
-                            ? '#3b82f6'
-                            : isDolu
-                              ? '#f97316'
-                              : isBakim
-                                ? '#fff'
-                                : isKilitli
-                                  ? '#fff'
-                                  : '#22c55e'
+                            ? '#3b82f6' // Rezerve – mavi (#60A5FA web)
+                            : isBakim
+                              ? '#94a3b8' // Bakım – gri (#CBD5E1 web)
+                              : isKilitli
+                                ? '#7c3aed' // Kilitli – mor (#7C3AED web)
+                                : isDolu
+                                  ? '#f97316' // Dolu – turuncu (#FB923C web)
+                                  : '#22c55e' // Boş – yeşil
                         const textColor = '#fff'
                         const disabled = (isDolu || isRezerve || isBakim || isKilitli) && !secili
                         return (
@@ -1114,8 +1186,15 @@ export default function TesisDetailScreen() {
                               }
                               setSecilenSezlongIds((prev) => {
                                 const next = new Set(prev)
-                                if (next.has(s.id)) next.delete(s.id)
-                                else next.add(s.id)
+                                if (next.has(s.id)) {
+                                  next.delete(s.id)
+                                } else {
+                                  if (next.size >= paxCount) {
+                                    setPaxUyariVisible(true)
+                                    return prev
+                                  }
+                                  next.add(s.id)
+                                }
                                 return next
                               })
                             }}
@@ -1914,6 +1993,26 @@ export default function TesisDetailScreen() {
         </View>
       ) : null}
 
+      {/* Kişi sayısı limit uyarı modalı */}
+      <Modal visible={paxUyariVisible} animationType="fade" transparent statusBarTranslucent>
+        <View style={styles.paxModalBackdrop}>
+          <View style={styles.paxModalCard}>
+            <Text style={styles.paxModalIcon}>⚠️</Text>
+            <Text style={styles.paxModalTitle}>Uyarı</Text>
+            <Text style={styles.paxModalMsg}>
+              {`Maksimum ${paxCount} şezlong seçebilirsiniz.\nKişi sayısını artırmak için + butonunu kullanın.`}
+            </Text>
+            <TouchableOpacity
+              style={styles.paxModalBtn}
+              activeOpacity={0.85}
+              onPress={() => setPaxUyariVisible(false)}
+            >
+              <Text style={styles.paxModalBtnText}>Tamam</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       <View style={[styles.stickyBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
         <View style={styles.stickyBarRow}>
           <TouchableOpacity
@@ -1944,8 +2043,8 @@ export default function TesisDetailScreen() {
             style={styles.stickyReserveBtn}
             activeOpacity={0.9}
             onPress={() => {
-              const firstId =
-                secilenSezlongIds.size > 0 ? [...secilenSezlongIds][0] : undefined
+              const allIds = [...secilenSezlongIds]
+              const firstId = allIds[0]
               const secilenSezlong = firstId
                 ? sezlonglar.find((s) => s.id === firstId)
                 : undefined
@@ -1953,6 +2052,28 @@ export default function TesisDetailScreen() {
                 ? gruplar.find((g) => g.id === secilenSezlong.grup_id)
                 : undefined
               const fiyatVal = secilenGrup?.fiyat ?? secilenGrup?.fiyat_hafici ?? null
+              // Tüm seçili şezlongların adlarını ve fiyat toplamını hesapla
+              const allSezlongAdi = allIds
+                .map((id) => {
+                  const sz = sezlonglar.find((s) => s.id === id)
+                  const gr = sz ? gruplar.find((g) => g.id === sz.grup_id) : undefined
+                  return sz ? `${gr?.ad ?? ''} ${sz.numara}`.trim() : ''
+                })
+                .filter(Boolean)
+                .join(', ')
+              const toplamSezlongUcreti = allIds.reduce((sum, id) => {
+                const sz = sezlonglar.find((s) => s.id === id)
+                const gr = sz ? gruplar.find((g) => g.id === sz.grup_id) : undefined
+                const f = gr?.fiyat ?? gr?.fiyat_hafici ?? 0
+                return sum + (Number(f) || 0)
+              }, 0)
+              const sezlongFiyatlar = allIds
+                .map((id) => {
+                  const sz = sezlonglar.find((s) => s.id === id)
+                  const gr = sz ? gruplar.find((g) => g.id === sz.grup_id) : undefined
+                  return String(gr?.fiyat ?? gr?.fiyat_hafici ?? 0)
+                })
+                .join(',')
               router.push({
                 pathname: '/rezervasyon-ozet',
                 params: {
@@ -1962,13 +2083,14 @@ export default function TesisDetailScreen() {
                   grup_id: secilenGrup?.id ?? '',
                   grup_adi: secilenGrup?.ad ?? '',
                   sezlong_id: secilenSezlong?.id ?? '',
-                  sezlong_adi: secilenSezlong
-                    ? `${secilenGrup?.ad ?? ''} ${secilenSezlong.numara}`.trim()
-                    : '',
+                  sezlong_ids: allIds.join(','),
+                  sezlong_adi: allSezlongAdi,
+                  sezlong_fiyatlar: sezlongFiyatlar,
                   fiyat: fiyatVal != null ? String(fiyatVal) : '',
+                  toplam_sezlong_ucreti: String(toplamSezlongUcreti),
                   tarih: secilenTarih ? secilenTarih.toISOString().split('T')[0] : '',
                   sure: '',
-                  kisi_sayisi: '1',
+                  kisi_sayisi: String(paxCount),
                   tesis_fotograf: parsePhotoSrcs(row.fotograflar)[0] ?? '',
                 },
               })
@@ -2157,4 +2279,67 @@ const styles = StyleSheet.create({
     backgroundColor: '#0ABAB5',
   },
   calendarBtnOkText: { fontSize: 12, fontWeight: '700', color: '#fff' },
+  paxRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  paxLabelWrap: { flex: 1 },
+  paxLabel: { fontSize: 14, fontWeight: '700', color: '#0f172a' },
+  paxSub: { fontSize: 11, color: '#64748b', marginTop: 2 },
+  paxControls: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  paxBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#0ABAB5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  paxBtnDisabled: { backgroundColor: '#cbd5e1' },
+  paxBtnText: { fontSize: 18, fontWeight: '700', color: '#fff', lineHeight: 22 },
+  paxCount: { fontSize: 16, fontWeight: '800', color: '#0f172a', minWidth: 24, textAlign: 'center' },
+  paxModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 32,
+  },
+  paxModalCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    paddingVertical: 28,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    width: '100%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  paxModalIcon: { fontSize: 36, marginBottom: 10 },
+  paxModalTitle: { fontSize: 17, fontWeight: '800', color: '#0f172a', marginBottom: 10 },
+  paxModalMsg: {
+    fontSize: 14,
+    color: '#475569',
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 22,
+  },
+  paxModalBtn: {
+    backgroundColor: '#0ABAB5',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 40,
+  },
+  paxModalBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
 })

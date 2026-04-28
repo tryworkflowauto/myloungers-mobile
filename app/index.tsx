@@ -1,19 +1,39 @@
 import { Ionicons } from '@expo/vector-icons'
 import { Link, useRouter } from 'expo-router'
 import { useState } from 'react'
-import { Alert, Image, ImageBackground, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import { Alert, Image, ImageBackground, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
 import { useAuthLocale } from '../lib/auth-locale-context'
 import { supabase } from '../lib/supabase'
+
+function mapLoginError(rawMsg: string, tLogin: { loginErrInvalidCredentials: string; loginErrEmailNotConfirmed: string; loginErrUserNotFound: string; loginErrDefault: string }): string {
+  const lower = rawMsg.toLowerCase()
+  if (lower.includes('invalid login credentials') || lower.includes('invalid email or password') || lower.includes('wrong password')) {
+    return tLogin.loginErrInvalidCredentials
+  }
+  if (lower.includes('email not confirmed') || lower.includes('email address not confirmed')) {
+    return tLogin.loginErrEmailNotConfirmed
+  }
+  if (lower.includes('user not found') || lower.includes('no user found')) {
+    return tLogin.loginErrUserNotFound
+  }
+  return tLogin.loginErrDefault
+}
 
 export default function LoginScreen() {
   const router = useRouter()
   const { lang, setLang, t } = useAuthLocale()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [loginErrVisible, setLoginErrVisible] = useState(false)
+  const [loginErrMsg, setLoginErrMsg] = useState('')
 
   const handleLogin = async () => {
     const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
-    if (error) { Alert.alert(t.common.errorTitle, error.message); return }
+    if (error) {
+      setLoginErrMsg(mapLoginError(error.message, t.login))
+      setLoginErrVisible(true)
+      return
+    }
     router.replace('/(tabs)')
   }
 
@@ -58,6 +78,24 @@ export default function LoginScreen() {
           </Link>
         </View>
       </View>
+
+      {/* ── Giriş hatası custom modal ── */}
+      <Modal visible={loginErrVisible} animationType="fade" transparent statusBarTranslucent>
+        <View style={styles.errBackdrop}>
+          <View style={styles.errCard}>
+            <Text style={styles.errIcon}>🔒</Text>
+            <Text style={styles.errTitle}>{t.login.loginErrTitle}</Text>
+            <Text style={styles.errMsg}>{loginErrMsg}</Text>
+            <TouchableOpacity
+              style={styles.errBtn}
+              activeOpacity={0.85}
+              onPress={() => setLoginErrVisible(false)}
+            >
+              <Text style={styles.errBtnText}>{t.login.loginErrOk}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ImageBackground>
   )
 }
@@ -84,4 +122,11 @@ const styles = StyleSheet.create({
   forgotWrapper: { alignItems: 'flex-end', paddingHorizontal: 20, marginTop: 10 },
   forgotBtn: { backgroundColor: '#3333cc', borderRadius: 30, paddingHorizontal: 18, paddingVertical: 8 },
   forgotBtnText: { color: 'white', fontWeight: '600', fontSize: 13, textTransform: 'capitalize' },
+  errBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center', padding: 32 },
+  errCard: { backgroundColor: '#fff', borderRadius: 16, paddingVertical: 28, paddingHorizontal: 24, alignItems: 'center', width: '100%', shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.18, shadowRadius: 16, elevation: 10 },
+  errIcon: { fontSize: 36, marginBottom: 10 },
+  errTitle: { fontSize: 17, fontWeight: '800', color: '#0f172a', marginBottom: 10 },
+  errMsg: { fontSize: 14, color: '#475569', textAlign: 'center', lineHeight: 22, marginBottom: 22 },
+  errBtn: { backgroundColor: '#0ABAB5', borderRadius: 12, paddingVertical: 12, paddingHorizontal: 40 },
+  errBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
 })

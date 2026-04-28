@@ -1,11 +1,12 @@
 import { Ionicons } from '@expo/vector-icons'
 import { useLocalSearchParams, useRouter } from 'expo-router'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
   Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -18,6 +19,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { supabase } from '@/lib/supabase'
 
 const TEAL = '#0d9488'
+const ORANGE = '#F5821F'
 
 function parseMoney(s: string | undefined): number {
   if (s == null || s === '') return 0
@@ -49,14 +51,39 @@ function pickDisplayName(row: Record<string, unknown> | null | undefined): strin
   const soyad = row['soyad']
   const parts = [ad, soyad].filter((x) => x != null && String(x).trim())
   if (parts.length) return parts.map(String).join(' ').trim()
-  const as = row['ad_soyad']
-  return as != null ? String(as).trim() : ''
+  const as_ = row['ad_soyad']
+  return as_ != null ? String(as_).trim() : ''
 }
 
 function uuidOrNull(s: string | undefined): string | null {
   const t = String(s ?? '').trim()
   return t.length > 0 ? t : null
 }
+
+function firstPhotoFromFotograflar(raw: unknown): string | null {
+  let arr: unknown = raw
+  if (typeof raw === 'string' && raw.trim()) {
+    try {
+      const p = JSON.parse(raw) as unknown
+      if (Array.isArray(p)) arr = p
+    } catch {
+      /* ignore */
+    }
+  }
+  if (!Array.isArray(arr) || arr.length === 0) return null
+  const first = arr[0] as { src?: string; url?: string; path?: string } | string | null
+  if (typeof first === 'string') return first || null
+  if (first && typeof first === 'object') {
+    const src = first.src ?? first.url ?? first.path ?? ''
+    return src ? String(src) : null
+  }
+  return null
+}
+
+const STEP_LABELS = ['Özet', 'Kişi Bilgileri', 'Ödeme', 'Onay'] as const
+
+type KisiForm = { ad_soyad: string; telefon: string; email: string }
+const emptyKisi = (): KisiForm => ({ ad_soyad: '', telefon: '', email: '' })
 
 export default function RezervasyonOzet() {
   const router = useRouter()
@@ -67,8 +94,11 @@ export default function RezervasyonOzet() {
     grup_id?: string
     grup_adi?: string
     sezlong_id?: string
+    sezlong_ids?: string
     sezlong_adi?: string
+    sezlong_fiyatlar?: string
     fiyat?: string
+    toplam_sezlong_ucreti?: string
     tarih?: string
     sure?: string
     kisi_sayisi?: string
@@ -86,10 +116,14 @@ export default function RezervasyonOzet() {
   const sureNum = parsePositiveInt(params.sure, 1)
   const kisiNum = parsePositiveInt(params.kisi_sayisi, 1)
   const fiyatBirim = parseMoney(fiyatRaw)
+  // toplam_sezlong_ucreti: tüm seçili şezlongların fiyat toplamı (slug.tsx'ten gelir)
+  // Eğer bu parametre yoksa (eski akış) tek şezlong fiyatıyla devam et
+  const toplamSezlongUcretiBase = parseMoney(params.toplam_sezlong_ucreti)
+  const sezlongUcretiBase = toplamSezlongUcretiBase > 0 ? toplamSezlongUcretiBase : fiyatBirim
 
   const sezlongUcreti = useMemo(
-    () => fiyatBirim * sureNum * kisiNum,
-    [fiyatBirim, sureNum, kisiNum],
+    () => sezlongUcretiBase * sureNum,
+    [sezlongUcretiBase, sureNum],
   )
   const toplam = sezlongUcreti
 
@@ -98,29 +132,111 @@ export default function RezervasyonOzet() {
     return addCalendarDays(tarih, sureNum - 1)
   }, [tarih, sureNum])
 
-  const [adSoyad, setAdSoyad] = useState('')
-  const [telefon, setTelefon] = useState('')
-  const [email, setEmail] = useState('')
+  // ─── Mevcut state'ler ───────────────────────────────────────────────────────
+  const [kisiler, setKisiler] = useState<KisiForm[]>(() =>
+    Array.from({ length: Math.max(1, kisiNum) }, emptyKisi),
+  )
+  const updateKisi = (index: number, field: keyof KisiForm, value: string) =>
+    setKisiler((prev) => {
+      const next = [...prev]
+      next[index] = { ...next[index], [field]: value }
+      return next
+    })
   const [profilYukleniyor, setProfilYukleniyor] = useState(true)
   const [odemeYukleniyor, setOdemeYukleniyor] = useState(false)
+  const resInFlightRef = useRef(false)
 
+  // ─── Yeni state'ler ─────────────────────────────────────────────────────────
+  const [kalanSure, setKalanSure] = useState(600) // 10 dakika
+  const [sureDoldu, setSureDoldu] = useState(false)
+  const [kvkk, setKvkk] = useState(false)
+  const [kvkkErr, setKvkkErr] = useState(false)
+  const [tesisCover, setTesisCover] = useState<string | null>(tesis_fotograf ?? null)
+  const [tesisAddress, setTesisAddress] = useState('')
+  const [tesisIptalPolitikasi, setTesisIptalPolitikasi] = useState<string | null>(null)
+  const [eksikBilgiModal, setEksikBilgiModal] = useState(false)
+  const [sureDolduModal, setSureDolduModal] = useState(false)
+
+  // ─── Geri sayım sayacı ──────────────────────────────────────────────────────
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setKalanSure((s) => {
+        if (s <= 1) {
+          clearInterval(interval)
+          setSureDoldu(true)
+          return 0
+        }
+        return s - 1
+      })
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [])
+
+  useEffect(() => {
+    if (!sureDoldu) return
+    setSureDolduModal(true)
+  }, [sureDoldu, router])
+
+  // ─── Tesis bilgileri (Supabase) ──────────────────────────────────────────────
+  useEffect(() => {
+    if (!tesis_id) return
+    let cancelled = false
+    void supabase
+      .from('tesisler')
+      .select('fotograflar, adres, ilce, sehir, iptal_politikasi')
+      .eq('id', tesis_id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (cancelled || !data) return
+        const cover = firstPhotoFromFotograflar(data.fotograflar)
+        if (cover && !tesis_fotograf) setTesisCover(cover)
+        const addr =
+          (data.adres as string | null)?.trim() ||
+          [data.ilce, data.sehir].filter(Boolean).join(', ')
+        setTesisAddress(addr)
+        setTesisIptalPolitikasi((data as Record<string, unknown>).iptal_politikasi as string | null ?? null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [tesis_id, tesis_fotograf])
+
+  // ─── Profil yükleme ──────────────────────────────────────────────────────────
   const loadProfil = useCallback(async () => {
     setProfilYukleniyor(true)
     try {
       const {
         data: { user },
       } = await supabase.auth.getUser()
-      if (user?.email) setEmail(user.email)
+      const profilEmail = user?.email ?? ''
       if (!user?.id) {
+        if (profilEmail) {
+          setKisiler((prev) => {
+            const next = [...prev]
+            if (next.length > 0) next[0] = { ...next[0], email: profilEmail }
+            return next
+          })
+        }
         setProfilYukleniyor(false)
         return
       }
       const { data } = await supabase.from('kullanicilar').select('*').eq('id', user.id).maybeSingle()
       if (data && typeof data === 'object') {
         const row = data as Record<string, unknown>
-        setAdSoyad(pickDisplayName(row))
+        const profAdSoyad = pickDisplayName(row)
         const tel = row['telefon']
-        setTelefon(tel != null ? String(tel) : '')
+        const profTelefon = tel != null ? String(tel) : ''
+        setKisiler((prev) => {
+          const next = [...prev]
+          if (next.length > 0) {
+            next[0] = {
+              ad_soyad: profAdSoyad || next[0].ad_soyad,
+              telefon: profTelefon || next[0].telefon,
+              email: profilEmail || next[0].email,
+            }
+          }
+          return next
+        })
       }
     } finally {
       setProfilYukleniyor(false)
@@ -134,20 +250,20 @@ export default function RezervasyonOzet() {
   const formatTl = (n: number) =>
     `${n.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TL`
 
+  // ─── Ödeme handler ───────────────────────────────────────────────────────────
   const handleOdeme = async () => {
-    const ad = adSoyad.trim()
-    const tel = telefon.trim()
-    const mail = email.trim()
-    if (!ad) {
-      Alert.alert('Eksik bilgi', 'Ad Soyad zorunludur.')
+    if (resInFlightRef.current) return
+    if (!kvkk) {
+      setKvkkErr(true)
       return
     }
-    if (!tel) {
-      Alert.alert('Eksik bilgi', 'Telefon zorunludur.')
-      return
-    }
-    if (!mail || !mail.includes('@')) {
-      Alert.alert('Eksik bilgi', 'Geçerli bir e-posta girin.')
+    setKvkkErr(false)
+
+    const allFilled = kisiler.every(
+      (k) => k.ad_soyad.trim() && k.telefon.trim() && k.email.trim() && k.email.includes('@'),
+    )
+    if (!allFilled) {
+      setEksikBilgiModal(true)
       return
     }
     if (!tarih) {
@@ -163,6 +279,7 @@ export default function RezervasyonOzet() {
       return
     }
 
+    resInFlightRef.current = true
     setOdemeYukleniyor(true)
     try {
       const {
@@ -182,47 +299,81 @@ export default function RezervasyonOzet() {
         return `${gun}${ay}${yil}`
       })()
 
-      const grupPrefix = (params.grup_adi as string)?.[0]?.toUpperCase() ?? 'X'
-      const sezlongNo = params.sezlong_adi
-        ? String(params.sezlong_adi).replace(/^[A-Za-z]+[-\s]*/, '')
-        : ''
-      const rezervasyonKodu = `MYL-${tarihFormatli}-${grupPrefix}${sezlongNo}`
+      // Seçili şezlong listesi: sezlong_ids param'ından parse et, yoksa sezlong_id'ye dön
+      const sezlongIdList = params.sezlong_ids
+        ? String(params.sezlong_ids).split(',').map((s) => s.trim()).filter(Boolean)
+        : params.sezlong_id
+          ? [String(params.sezlong_id).trim()].filter(Boolean)
+          : []
 
-      const insertPayload: Record<string, unknown> = {
-        tesis_id: uuidOrNull(tesis_id),
-        kullanici_id: user.id,
-        sezlong_id: uuidOrNull(params.sezlong_id),
-        baslangic_tarih: tarih,
-        bitis_tarih: bitisTarih || tarih,
-        durum: 'beklemede',
-        toplam_tutar: Number(toplam.toFixed(2)),
-        kisi_sayisi: kisiNum,
-        rezervasyon_kodu: rezervasyonKodu,
-      }
+      // Her şezlongun bireysel fiyatı (slug.tsx'ten gelir)
+      const sezlongFiyatlarArr = params.sezlong_fiyatlar
+        ? String(params.sezlong_fiyatlar).split(',').map((s) => parseMoney(s.trim()))
+        : []
 
-      const { data: rezData, error: rezError } = await supabase
-        .from('rezervasyonlar')
-        .insert(insertPayload)
-        .select('id')
-        .single()
+      // Her şezlongun adı ("Gold 1", "Silver 2", ...)
+      const sezlongAdlari = sezlong_adi
+        ? String(sezlong_adi).split(',').map((s) => s.trim())
+        : []
 
-      console.log('rezervasyon insert hatasi:', JSON.stringify(rezError))
-
-      if (rezError || !rezData) {
-        Alert.alert('Hata', 'Rezervasyon oluşturulamadı')
+      if (sezlongIdList.length === 0) {
+        Alert.alert('Hata', 'Şezlong seçimi eksik.')
         return
       }
-      const rezervasyonId = rezData.id
 
+      // Her şezlong için ayrı INSERT
+      const insertedIds: string[] = []
+      for (let i = 0; i < sezlongIdList.length; i++) {
+        const thisSezlongId = sezlongIdList[i]
+        // Bireysel fiyat: sezlong_fiyatlar'dan al, yoksa fiyatBirim'e dön
+        const thisFiyat = sezlongFiyatlarArr[i] != null ? sezlongFiyatlarArr[i] : fiyatBirim
+        const thisToplam = Number((thisFiyat * sureNum).toFixed(2))
+
+        // Rezervasyon kodu: "MYL-DDMMYYYY-G1" (grup ilk harfi + sezlong numarası)
+        const thisSezlongAdi = sezlongAdlari[i] ?? `${i + 1}`
+        const thisGrupPrefix = thisSezlongAdi.charAt(0).toUpperCase() || 'X'
+        const thisSezlongNo = thisSezlongAdi.replace(/^[^\d]*/, '')
+        const thisRezKodu = `MYL-${tarihFormatli}-${thisGrupPrefix}${thisSezlongNo}`
+
+        const insertPayload: Record<string, unknown> = {
+          tesis_id: uuidOrNull(tesis_id),
+          kullanici_id: user.id,
+          sezlong_id: thisSezlongId,
+          sezlong_ids: [thisSezlongId],
+          baslangic_tarih: tarih,
+          bitis_tarih: bitisTarih || tarih,
+          durum: 'beklemede',
+          toplam_tutar: thisToplam,
+          kisi_sayisi: 1,
+          rezervasyon_kodu: thisRezKodu,
+        }
+
+        const { data: rezData, error: rezError } = await supabase
+          .from('rezervasyonlar')
+          .insert(insertPayload)
+          .select('id')
+          .single()
+
+        if (rezError || !rezData) {
+          Alert.alert('Hata', 'Rezervasyon oluşturulamadı')
+          return
+        }
+        insertedIds.push(rezData.id as string)
+      }
+
+      // İlk INSERT'in ID'si Paratika orderId olarak gider
+      const rezervasyonId = insertedIds[0]
+
+      // Paratika session: toplam tutar tüm şezlongların toplamı
       const toplamTutar = toplam
-      const adSoyadInput = adSoyad
+      const adSoyadInput = (kisiler[0]?.ad_soyad ?? '').trim()
       const [adSoyadParatika, soyad] =
-        adSoyadInput.trim().split(' ').length > 1
+        adSoyadInput.split(' ').length > 1
           ? [
-              adSoyadInput.trim().split(' ').slice(0, -1).join(' '),
-              adSoyadInput.trim().split(' ').slice(-1)[0],
+              adSoyadInput.split(' ').slice(0, -1).join(' '),
+              adSoyadInput.split(' ').slice(-1)[0],
             ]
-          : [adSoyadInput.trim(), '']
+          : [adSoyadInput, '']
 
       const sessionRes = await fetch(`${process.env.EXPO_PUBLIC_SITE_URL}/api/paratika/session`, {
         method: 'POST',
@@ -234,8 +385,9 @@ export default function RezervasyonOzet() {
           orderId: rezervasyonId,
           customerName: adSoyadParatika,
           customerSurname: soyad || adSoyadParatika,
-          customerEmail: email,
-          customerPhone: telefon,
+          customerEmail: kisiler[0]?.email ?? '',
+          customerPhone: kisiler[0]?.telefon ?? '',
+          kisiler: kisiler,
         }),
       })
 
@@ -248,14 +400,20 @@ export default function RezervasyonOzet() {
 
       router.push({
         pathname: '/odeme-webview',
-        params: { token: sessionData.sessionToken },
+        params: { token: sessionData.sessionToken, rezervasyon_id: rezervasyonId },
       })
     } catch (e) {
       Alert.alert('Hata', e instanceof Error ? e.message : 'Beklenmeyen hata')
     } finally {
+      resInFlightRef.current = false
       setOdemeYukleniyor(false)
     }
   }
+
+  // ─── Sayaç değerleri ─────────────────────────────────────────────────────────
+  const sayacDakika = String(Math.floor(kalanSure / 60)).padStart(2, '0')
+  const sayacSaniye = String(kalanSure % 60).padStart(2, '0')
+  const sayacUrgent = kalanSure < 120
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -264,6 +422,7 @@ export default function RezervasyonOzet() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
       >
+        {/* ── Header ── */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} hitSlop={14} style={styles.headerBtn} accessibilityRole="button">
             <Ionicons name="chevron-back" size={26} color={TEAL} />
@@ -272,6 +431,48 @@ export default function RezervasyonOzet() {
           <View style={styles.headerBtn} />
         </View>
 
+        {/* ── Sticky geri sayım sayacı ── */}
+        {kalanSure > 0 && (
+          <View style={[styles.countdown, sayacUrgent && styles.countdownUrgent]}>
+            <Text style={styles.countdownEmoji}>⏱️</Text>
+            <View style={styles.countdownTexts}>
+              <Text style={[styles.countdownMain, sayacUrgent && styles.countdownMainUrgent]}>
+                {`Şezlongunuz tutuluyor: ${sayacDakika}:${sayacSaniye}`}
+              </Text>
+              <Text style={[styles.countdownSub, sayacUrgent && styles.countdownSubUrgent]}>
+                Süre bitmeden ödemeyi tamamlayın
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* ── Adım göstergesi ── */}
+        <View style={styles.stepsBar}>
+          {STEP_LABELS.map((label, idx) => {
+            const stepNo = idx + 1
+            const isActive = stepNo === 1
+            const isDone = stepNo < 1
+            return (
+              <View key={label} style={styles.stepItem}>
+                <View style={[styles.stepCircle, isActive && styles.stepCircleActive, isDone && styles.stepCircleDone]}>
+                  {isDone ? (
+                    <Ionicons name="checkmark" size={12} color="#fff" />
+                  ) : (
+                    <Text style={[styles.stepNum, (isActive || isDone) && styles.stepNumActive]}>{stepNo}</Text>
+                  )}
+                </View>
+                <Text style={[styles.stepLabel, isActive && styles.stepLabelActive, isDone && styles.stepLabelDone]}>
+                  {label}
+                </Text>
+                {idx < STEP_LABELS.length - 1 && (
+                  <View style={[styles.stepLine, isDone && styles.stepLineDone]} />
+                )}
+              </View>
+            )
+          })}
+        </View>
+
+        {/* ── İçerik ── */}
         {profilYukleniyor ? (
           <View style={styles.loader}>
             <ActivityIndicator size="large" color={TEAL} />
@@ -279,14 +480,39 @@ export default function RezervasyonOzet() {
         ) : (
           <>
             <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-              {tesis_fotograf ? (
-                <Image source={{ uri: tesis_fotograf }} style={styles.cover} resizeMode="cover" />
-              ) : (
-                <View style={[styles.cover, styles.coverPlaceholder]} />
-              )}
-              <Text style={styles.tesisAd}>{tesis_adi || 'Tesis'}</Text>
-              <Text style={styles.grupAd}>{grup_adi}</Text>
 
+              {/* ── Tesis bilgi kartı ── */}
+              <View style={styles.sumCard}>
+                {tesisCover ? (
+                  <Image source={{ uri: tesisCover }} style={styles.sumImg} resizeMode="cover" />
+                ) : (
+                  <View style={[styles.sumImg, styles.sumImgPh]}>
+                    <Ionicons name="image-outline" size={32} color="#94a3b8" />
+                  </View>
+                )}
+                <View style={styles.sumBody}>
+                  <Text style={styles.sumName}>{tesis_adi || 'Tesis'}</Text>
+                  {tesisAddress ? (
+                    <View style={styles.sumMetaRow}>
+                      <Ionicons name="location-outline" size={11} color="#64748b" />
+                      <Text style={styles.sumMeta} numberOfLines={1}>{tesisAddress}</Text>
+                    </View>
+                  ) : null}
+                  <View style={styles.sumRows}>
+                    <SumRow icon="📅" label="Tarih" value={tarih || '—'} />
+                    <SumRow icon="🛏" label="Şezlong" value={sezlong_adi || '—'} />
+                    <SumRow icon="👥" label="Kişi" value={`${kisiNum} kişi`} />
+                    <SumRow icon="📆" label="Süre" value={`${sureNum} gün`} />
+                  </View>
+                  <View style={styles.sumDivider} />
+                  <View style={styles.sumTotalRow}>
+                    <Text style={styles.sumTotalLabel}>Toplam</Text>
+                    <Text style={styles.sumTotalValue}>{formatTl(toplam)}</Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* ── Rezervasyon detayı ── */}
               <View style={styles.card}>
                 <Text style={styles.cardTitle}>Rezervasyon detayı</Text>
                 <Row label="Tarih" value={tarih || '—'} />
@@ -295,6 +521,7 @@ export default function RezervasyonOzet() {
                 <Row label="Kişi sayısı" value={String(kisiNum)} last />
               </View>
 
+              {/* ── Fiyat özeti ── */}
               <View style={styles.card}>
                 <Text style={styles.cardTitle}>Fiyat özeti</Text>
                 <Row label="Şezlong ücreti" value={formatTl(sezlongUcreti)} />
@@ -304,45 +531,91 @@ export default function RezervasyonOzet() {
                 </View>
               </View>
 
-              <View style={styles.card}>
-                <Text style={styles.cardTitle}>Kişisel bilgiler</Text>
-                <Text style={styles.inputLabel}>Ad Soyad *</Text>
-                <TextInput
-                  style={styles.input}
-                  value={adSoyad}
-                  onChangeText={setAdSoyad}
-                  placeholder="Adınız Soyadınız"
-                  placeholderTextColor="#94a3b8"
-                />
-                <Text style={styles.inputLabel}>Telefon *</Text>
-                <TextInput
-                  style={styles.input}
-                  value={telefon}
-                  onChangeText={setTelefon}
-                  placeholder="05xx xxx xx xx"
-                  placeholderTextColor="#94a3b8"
-                  keyboardType="phone-pad"
-                />
-                <Text style={styles.inputLabel}>E-posta *</Text>
-                <TextInput
-                  style={styles.input}
-                  value={email}
-                  onChangeText={setEmail}
-                  placeholder="ornek@email.com"
-                  placeholderTextColor="#94a3b8"
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
+              {/* ── İptal politikası ── */}
+              <View style={styles.iptalBox}>
+                <Text style={styles.iptalText}>
+                  {'🔄 '}
+                  <Text style={styles.iptalBold}>İptal Politikası: </Text>
+                  {tesisIptalPolitikasi ?? 'Tesisin iptal politikası belirtilmemiş, lütfen tesise sorun.'}
+                </Text>
               </View>
+
+              {/* ── Kişisel bilgiler (her şezlong için ayrı form) ── */}
+              {kisiler.map((kisi, index) => {
+                const sezlongAdlari = sezlong_adi.split(',')
+                const buSezlong = sezlongAdlari[index]?.trim() || `${index + 1}. Şezlong`
+                const isLast = index === kisiler.length - 1
+                return (
+                  <View key={index} style={[styles.card, !isLast && { marginBottom: 0, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, borderBottomWidth: 0 }]}>
+                    {index > 0 && (
+                      <View style={styles.kisiAyrac} />
+                    )}
+                    <Text style={styles.cardTitle}>
+                      {`${index + 1}. Kişi Bilgileri`}
+                      <Text style={styles.cardTitleSub}>{`  (Şezlong: ${buSezlong})`}</Text>
+                    </Text>
+                    <Text style={styles.inputLabel}>Ad Soyad *</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={kisi.ad_soyad}
+                      onChangeText={(v) => updateKisi(index, 'ad_soyad', v)}
+                      placeholder="Adınız Soyadınız"
+                      placeholderTextColor="#94a3b8"
+                    />
+                    <Text style={styles.inputLabel}>Telefon *</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={kisi.telefon}
+                      onChangeText={(v) => updateKisi(index, 'telefon', v)}
+                      placeholder="05xx xxx xx xx"
+                      placeholderTextColor="#94a3b8"
+                      keyboardType="phone-pad"
+                    />
+                    <Text style={styles.inputLabel}>E-posta *</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={kisi.email}
+                      onChangeText={(v) => updateKisi(index, 'email', v)}
+                      placeholder="ornek@email.com"
+                      placeholderTextColor="#94a3b8"
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                    />
+                    {/* ── KVKK tek kere, son kişi formunun altında ── */}
+                    {isLast && (
+                      <>
+                        <TouchableOpacity
+                          style={[styles.kvkkRow, kvkkErr && styles.kvkkRowErr]}
+                          onPress={() => { setKvkk((v) => !v); setKvkkErr(false) }}
+                          activeOpacity={0.8}
+                          accessibilityRole="checkbox"
+                        >
+                          <View style={[styles.kvkkBox, kvkk && styles.kvkkBoxChecked]}>
+                            {kvkk && <Ionicons name="checkmark" size={13} color="#fff" />}
+                          </View>
+                          <Text style={styles.kvkkText}>
+                            Kullanım Koşulları'nı ve KVKK Aydınlatma Metni'ni okudum, onaylıyorum.
+                          </Text>
+                        </TouchableOpacity>
+                        {kvkkErr && (
+                          <Text style={styles.kvkkErrText}>Devam etmek için onay vermeniz gerekmektedir</Text>
+                        )}
+                      </>
+                    )}
+                  </View>
+                )
+              })}
+
               <View style={{ height: 24 }} />
             </ScrollView>
 
+            {/* ── Footer: Ödemeye Geç ── */}
             <View style={styles.footer}>
               <TouchableOpacity
-                style={[styles.payBtn, odemeYukleniyor && styles.payBtnDisabled]}
+                style={[styles.payBtn, (odemeYukleniyor || !kvkk) && styles.payBtnDisabled]}
                 onPress={() => void handleOdeme()}
-                disabled={odemeYukleniyor}
+                disabled={odemeYukleniyor || !kvkk}
                 activeOpacity={0.9}
               >
                 {odemeYukleniyor ? (
@@ -355,9 +628,54 @@ export default function RezervasyonOzet() {
           </>
         )}
       </KeyboardAvoidingView>
+
+      {/* ── Eksik bilgi modal ── */}
+      <Modal visible={eksikBilgiModal} animationType="fade" transparent statusBarTranslucent>
+        <View style={styles.cmBackdrop}>
+          <View style={styles.cmCard}>
+            <Text style={styles.cmIcon}>⚠️</Text>
+            <Text style={styles.cmTitle}>Eksik bilgi</Text>
+            <Text style={styles.cmMsg}>
+              Tüm kişilerin Ad Soyad, Telefon ve E-posta alanlarını eksiksiz doldurun.
+            </Text>
+            <TouchableOpacity
+              style={styles.cmBtn}
+              activeOpacity={0.85}
+              onPress={() => setEksikBilgiModal(false)}
+            >
+              <Text style={styles.cmBtnText}>Tamam</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Süre doldu modal ── */}
+      <Modal visible={sureDolduModal} animationType="fade" transparent statusBarTranslucent>
+        <View style={styles.cmBackdrop}>
+          <View style={styles.cmCard}>
+            <Text style={styles.cmIcon}>⏰</Text>
+            <Text style={styles.cmTitle}>Süre Doldu</Text>
+            <Text style={styles.cmMsg}>
+              Rezervasyon tutma süreniz doldu. Şezlong yeniden müsait hale geldi.
+            </Text>
+            <TouchableOpacity
+              style={styles.cmBtn}
+              activeOpacity={0.85}
+              onPress={() => {
+                setSureDolduModal(false)
+                router.back()
+              }}
+            >
+              <Text style={styles.cmBtnText}>Tamam</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   )
 }
+
+// ─── Yardımcı bileşenler ─────────────────────────────────────────────────────
 
 function Row({ label, value, last }: { label: string; value: string; last?: boolean }) {
   return (
@@ -368,14 +686,22 @@ function Row({ label, value, last }: { label: string; value: string; last?: bool
   )
 }
 
+function SumRow({ icon, label, value }: { icon: string; label: string; value: string }) {
+  return (
+    <View style={styles.sumRowItem}>
+      <Text style={styles.sumRowL}>{icon} {label}</Text>
+      <Text style={styles.sumRowV}>{value}</Text>
+    </View>
+  )
+}
+
+// ─── Stiller ─────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
-  flex: {
-    flex: 1,
-  },
+  safe: { flex: 1, backgroundColor: '#f8fafc' },
+  flex: { flex: 1 },
+
+  // Header
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -386,71 +712,117 @@ const styles = StyleSheet.create({
     borderBottomColor: '#e2e8f0',
     backgroundColor: '#fff',
   },
-  headerBtn: {
-    width: 40,
-    height: 40,
+  headerBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { fontSize: 17, fontWeight: '700', color: '#0f172a' },
+
+  // Sayaç
+  countdown: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#0f172a',
-  },
-  loader: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  scroll: {
-    flex: 1,
-  },
-  scrollContent: {
+    gap: 10,
+    backgroundColor: '#FEF3C7',
+    borderBottomWidth: 2,
+    borderBottomColor: '#F59E0B',
     paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 8,
+    paddingVertical: 10,
   },
-  cover: {
-    width: '100%',
-    height: 180,
-    borderRadius: 12,
-    backgroundColor: '#f1f5f9',
+  countdownUrgent: {
+    backgroundColor: '#FEE2E2',
+    borderBottomColor: '#DC2626',
   },
-  coverPlaceholder: {
+  countdownEmoji: { fontSize: 20 },
+  countdownTexts: { flex: 1 },
+  countdownMain: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#92400E',
+    fontVariant: ['tabular-nums'],
+  },
+  countdownMainUrgent: { color: '#991B1B' },
+  countdownSub: { fontSize: 11, color: '#92400E', opacity: 0.8, marginTop: 1 },
+  countdownSubUrgent: { color: '#991B1B' },
+
+  // Adım göstergesi
+  stepsBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: '#fff',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#e2e8f0',
+  },
+  stepItem: { flexDirection: 'row', alignItems: 'center' },
+  stepCircle: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#e2e8f0',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  tesisAd: {
-    marginTop: 14,
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#0f172a',
+  stepCircleActive: { backgroundColor: ORANGE },
+  stepCircleDone: { backgroundColor: '#22c55e' },
+  stepNum: { fontSize: 11, fontWeight: '700', color: '#94a3b8' },
+  stepNumActive: { color: '#fff' },
+  stepLabel: { fontSize: 9, color: '#94a3b8', marginLeft: 4, fontWeight: '600' },
+  stepLabelActive: { color: ORANGE },
+  stepLabelDone: { color: '#22c55e' },
+  stepLine: { width: 16, height: 1.5, backgroundColor: '#e2e8f0', marginHorizontal: 4 },
+  stepLineDone: { backgroundColor: '#22c55e' },
+
+  // Loader
+  loader: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+
+  // ScrollView
+  scroll: { flex: 1 },
+  scrollContent: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 8 },
+
+  // Tesis bilgi kartı (sum-card)
+  sumCard: {
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    overflow: 'hidden',
+    marginBottom: 14,
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.07, shadowRadius: 8 },
+      android: { elevation: 3 },
+    }),
   },
-  grupAd: {
-    marginTop: 4,
-    fontSize: 15,
-    color: '#64748b',
-    fontWeight: '600',
-  },
+  sumImg: { width: '100%', height: 160, backgroundColor: '#f1f5f9' },
+  sumImgPh: { alignItems: 'center', justifyContent: 'center' },
+  sumBody: { padding: 14 },
+  sumName: { fontSize: 17, fontWeight: '800', color: '#0f172a', marginBottom: 4 },
+  sumMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 10 },
+  sumMeta: { fontSize: 12, color: '#64748b', flex: 1 },
+  sumRows: { gap: 6 },
+  sumRowItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  sumRowL: { fontSize: 12, color: '#64748b' },
+  sumRowV: { fontSize: 12, fontWeight: '600', color: '#0f172a' },
+  sumDivider: { height: 1, backgroundColor: '#e2e8f0', marginVertical: 10 },
+  sumTotalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  sumTotalLabel: { fontSize: 14, fontWeight: '700', color: '#0f172a' },
+  sumTotalValue: { fontSize: 18, fontWeight: '800', color: '#22c55e' },
+
+  // Rezervasyon / fiyat kartları
   card: {
-    marginTop: 16,
+    marginBottom: 14,
     padding: 16,
     borderRadius: 12,
     backgroundColor: '#fff',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 2,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#f1f5f9',
+    borderColor: '#e2e8f0',
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 6 },
+      android: { elevation: 2 },
+    }),
   },
-  cardTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#0f172a',
-    marginBottom: 12,
-  },
+  cardTitle: { fontSize: 15, fontWeight: '700', color: '#0f172a', marginBottom: 12 },
+  cardTitleSub: { fontSize: 12, fontWeight: '400', color: '#64748b' },
+  kisiAyrac: { height: 1, backgroundColor: '#e2e8f0', marginBottom: 16 },
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -460,21 +832,9 @@ const styles = StyleSheet.create({
     borderBottomColor: '#f1f5f9',
     gap: 12,
   },
-  rowLast: {
-    borderBottomWidth: 0,
-  },
-  rowLabel: {
-    fontSize: 14,
-    color: '#64748b',
-    flexShrink: 0,
-  },
-  rowValue: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#0f172a',
-    flex: 1,
-    textAlign: 'right',
-  },
+  rowLast: { borderBottomWidth: 0 },
+  rowLabel: { fontSize: 14, color: '#64748b', flexShrink: 0 },
+  rowValue: { fontSize: 14, fontWeight: '600', color: '#0f172a', flex: 1, textAlign: 'right' },
   totalRow: {
     marginTop: 8,
     paddingTop: 12,
@@ -484,23 +844,23 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  totalLabel: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#0f172a',
+  totalLabel: { fontSize: 16, fontWeight: '700', color: '#0f172a' },
+  totalValue: { fontSize: 22, fontWeight: '800', color: TEAL },
+
+  // İptal politikası
+  iptalBox: {
+    backgroundColor: '#FFFBEB',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    padding: 12,
+    marginBottom: 14,
   },
-  totalValue: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: TEAL,
-  },
-  inputLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#475569',
-    marginBottom: 6,
-    marginTop: 10,
-  },
+  iptalText: { fontSize: 13, color: '#92400E', lineHeight: 19 },
+  iptalBold: { fontWeight: '700' },
+
+  // Form
+  inputLabel: { fontSize: 13, fontWeight: '600', color: '#475569', marginBottom: 6, marginTop: 10 },
   input: {
     borderWidth: 1,
     borderColor: '#e2e8f0',
@@ -511,6 +871,37 @@ const styles = StyleSheet.create({
     color: '#0f172a',
     backgroundColor: '#fafafa',
   },
+
+  // KVKK
+  kvkkRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginTop: 16,
+    backgroundColor: '#EFF6FF',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    padding: 12,
+  },
+  kvkkRowErr: { borderColor: '#fca5a5', backgroundColor: '#fff1f2' },
+  kvkkBox: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: '#93c5fd',
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+    flexShrink: 0,
+  },
+  kvkkBoxChecked: { backgroundColor: TEAL, borderColor: TEAL },
+  kvkkText: { flex: 1, fontSize: 12, color: '#1e40af', lineHeight: 18 },
+  kvkkErrText: { fontSize: 12, color: '#dc2626', marginTop: 6 },
+
+  // Footer
   footer: {
     paddingHorizontal: 16,
     paddingTop: 8,
@@ -527,12 +918,44 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: '100%',
   },
-  payBtnDisabled: {
-    opacity: 0.75,
+  payBtnDisabled: { opacity: 0.5 },
+  payBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+
+  // Custom modal (eksik bilgi / süre doldu)
+  cmBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 32,
   },
-  payBtnText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
+  cmCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    paddingVertical: 28,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    width: '100%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    elevation: 10,
   },
+  cmIcon: { fontSize: 36, marginBottom: 10 },
+  cmTitle: { fontSize: 17, fontWeight: '800', color: '#0f172a', marginBottom: 10 },
+  cmMsg: {
+    fontSize: 14,
+    color: '#475569',
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 22,
+  },
+  cmBtn: {
+    backgroundColor: TEAL,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 40,
+  },
+  cmBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
 })
