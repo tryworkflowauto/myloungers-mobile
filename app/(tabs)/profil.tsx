@@ -901,7 +901,7 @@ export default function ProfilScreen() {
       // Aktif siparişler
       const { data: aktifData, error: aktifErr } = await supabase
         .from('siparisler')
-        .select('id, durum, toplam, created_at, tesis_id, rezervasyon_id, tesisler(ad)')
+        .select('id, durum, toplam, created_at, tesis_id, rezervasyon_id, siparis_kalemleri(ad, adet, fiyat), tesisler(ad)')
         .in('rezervasyon_id', rezIds)
         .in('durum', [SIPARIS_DURUM.YENI, SIPARIS_DURUM.HAZIRLANIYOR, SIPARIS_DURUM.HAZIR, SIPARIS_DURUM.YOLDA])
         .order('created_at', { ascending: false })
@@ -922,8 +922,9 @@ export default function ProfilScreen() {
 
       let query = supabase
         .from('siparisler')
-        .select('id, durum, toplam, created_at, tesis_id, tesisler(ad)')
+        .select('id, durum, toplam, created_at, tesis_id, rezervasyon_id, siparis_kalemleri(ad, adet, fiyat), tesisler(ad)')
         .in('rezervasyon_id', rezIds)
+        .in('durum', [SIPARIS_DURUM.TESLIM_EDILDI, 'iptal', 'iptal_edildi'])
         .order('created_at', { ascending: false })
         .limit(50)
 
@@ -1552,7 +1553,7 @@ export default function ProfilScreen() {
           ).map((s) => (
             <TouchableOpacity
               key={s.key}
-              style={styles.altSekmeItem}
+              style={[styles.altSekmeItem, altSekme === s.key && styles.altSekmeItemActive]}
               onPress={() => setAltSekme(s.key)}
               activeOpacity={0.85}
             >
@@ -1562,7 +1563,6 @@ export default function ProfilScreen() {
               >
                 {s.label}
               </Text>
-              {altSekme === s.key ? <View style={styles.altSekmeUnderline} /> : null}
             </TouchableOpacity>
           ))}
         </ScrollView>
@@ -1957,45 +1957,80 @@ export default function ProfilScreen() {
                 </View>
               ) : (
                 aktifSiparisler.map((s: any) => {
-                  const stages = [SIPARIS_DURUM.YENI, SIPARIS_DURUM.HAZIRLANIYOR, SIPARIS_DURUM.HAZIR, SIPARIS_DURUM.YOLDA, SIPARIS_DURUM.TESLIM_EDILDI]
-                  const stageLabels = ['Yeni', 'Hazırlanıyor', 'Hazır', 'Yolda', 'Teslim Edildi']
-                  const currentIdx = stages.indexOf(s.durum)
+                  const stages = [
+                    { key: SIPARIS_DURUM.YENI,         label: 'Alındı',       icon: '✓'  },
+                    { key: SIPARIS_DURUM.HAZIRLANIYOR, label: 'Hazırlanıyor', icon: '🍳' },
+                    { key: SIPARIS_DURUM.HAZIR,        label: 'Hazır',        icon: '🔔' },
+                    { key: SIPARIS_DURUM.YOLDA,        label: 'Yolda',        icon: '🛵' },
+                    { key: SIPARIS_DURUM.TESLIM_EDILDI,label: 'Teslim',       icon: '✅' },
+                  ]
+                  const currentIdx = stages.findIndex((st) => st.key === s.durum)
                   const tesisAd = s.tesisler?.ad || 'Bilinmeyen Tesis'
+                  const kalemleri: any[] = Array.isArray(s.siparis_kalemleri) ? s.siparis_kalemleri : []
+                  const toplamHesap = kalemleri.reduce((sum: number, k: any) => sum + Number(k.fiyat ?? 0) * Number(k.adet ?? 1), 0)
+                  const toplamGoster = toplamHesap > 0 ? toplamHesap : Number(s.toplam || 0)
+                  const zamanOnce = formatZamanOnce(s.created_at)
+                  const chipConfig: Record<string, { bg: string; color: string; text: string }> = {
+                    [SIPARIS_DURUM.YENI]:         { bg: 'rgba(245,130,31,0.12)', color: '#F5821F', text: '📥 Alındı' },
+                    [SIPARIS_DURUM.HAZIRLANIYOR]: { bg: 'rgba(234,179,8,0.12)',  color: '#CA8A04', text: '🍳 Hazırlanıyor' },
+                    [SIPARIS_DURUM.HAZIR]:        { bg: 'rgba(16,185,129,0.12)', color: '#10B981', text: '🔔 Hazır' },
+                    [SIPARIS_DURUM.YOLDA]:        { bg: 'rgba(59,130,246,0.15)', color: '#3B82F6', text: '🛵 Garson Yolda' },
+                  }
+                  const chip = chipConfig[s.durum] ?? chipConfig[SIPARIS_DURUM.YENI]
 
                   return (
                     <View
                       key={String(s.id)}
                       style={{
                         backgroundColor: '#fff',
-                        borderRadius: 12,
-                        padding: 14,
-                        marginBottom: 10,
-                        borderWidth: StyleSheet.hairlineWidth,
-                        borderColor: '#e2e8f0',
-                        shadowColor: '#000',
-                        shadowOpacity: 0.05,
+                        borderRadius: 14,
+                        padding: 16,
+                        marginBottom: 12,
+                        borderWidth: 1,
+                        borderColor: 'rgba(10,186,181,0.2)',
+                        shadowColor: '#0ABAB5',
+                        shadowOpacity: 0.08,
                         shadowRadius: 8,
                         shadowOffset: { width: 0, height: 2 },
                         elevation: 2,
                       }}
                     >
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                        <Text style={{ fontSize: 14, fontWeight: '700', color: '#0f172a' }} numberOfLines={1}>
-                          {tesisAd}
-                        </Text>
-                        <Text style={{ fontSize: 13, fontWeight: '700', color: '#F5821F' }}>
-                          ₺{Number(s.toplam || 0).toLocaleString('tr-TR')}
-                        </Text>
+                      {/* Üst satır: sipariş kodu + durum chip */}
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+                        <View>
+                          <Text style={{ fontSize: 14, fontWeight: '700', color: '#0f172a' }}>
+                            Sipariş #{String(s.id).slice(-5)}
+                          </Text>
+                          <Text style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{tesisAd}</Text>
+                        </View>
+                        <View style={{ alignItems: 'flex-end' }}>
+                          <View style={{ backgroundColor: chip.bg, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 }}>
+                            <Text style={{ fontSize: 11, fontWeight: '600', color: chip.color }}>{chip.text}</Text>
+                          </View>
+                          <Text style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>{zamanOnce}</Text>
+                        </View>
                       </View>
 
-                      {/* Progress bar */}
-                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginVertical: 10 }}>
+                      {/* Ürünler */}
+                      {kalemleri.length > 0 && (
+                        <Text style={{ fontSize: 12, color: '#475569', marginBottom: 8 }} numberOfLines={2}>
+                          {kalemleri.map((u: any, i: number) => `${u.ad} ×${u.adet}${i < kalemleri.length - 1 ? ' · ' : ''}`).join('')}
+                        </Text>
+                      )}
+
+                      {/* Toplam */}
+                      <Text style={{ fontSize: 14, fontWeight: '700', color: '#0f172a', textAlign: 'right', marginBottom: 14 }}>
+                        ₺{toplamGoster.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                      </Text>
+
+                      {/* Progress bar — web ile aynı mantık */}
+                      <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
                         {stages.map((stage, idx) => {
-                          const isDone = idx <= currentIdx
+                          const isDone   = idx < currentIdx
                           const isActive = idx === currentIdx
                           const size = isActive ? 32 : 26
                           return (
-                            <View key={stage} style={{ flex: 1, alignItems: 'center', position: 'relative' }}>
+                            <View key={stage.key} style={{ flex: 1, alignItems: 'center', position: 'relative' }}>
                               {idx > 0 && (
                                 <View style={{
                                   position: 'absolute',
@@ -2011,43 +2046,32 @@ export default function ProfilScreen() {
                                 width: size,
                                 height: size,
                                 borderRadius: size / 2,
-                                backgroundColor: isActive ? '#F5821F' : (isDone ? '#10B981' : '#e2e8f0'),
+                                backgroundColor: isActive ? '#F5821F' : isDone ? '#10B981' : '#e2e8f0',
                                 alignItems: 'center',
                                 justifyContent: 'center',
                                 zIndex: 1,
                               }}>
-                                {isDone && !isActive ? (
+                                {isDone ? (
                                   <Ionicons name="checkmark" size={14} color="#fff" />
                                 ) : (
-                                  <Text style={{ fontSize: 11, color: '#fff', fontWeight: '700' }}>
-                                    {idx + 1}
+                                  <Text style={{ fontSize: isActive ? 13 : 11, color: isActive ? '#fff' : '#94a3b8', fontWeight: '700' }}>
+                                    {stage.icon}
                                   </Text>
                                 )}
                               </View>
                               <Text style={{
                                 fontSize: 9,
                                 marginTop: 4,
-                                color: isActive ? '#F5821F' : (isDone ? '#10B981' : '#94a3b8'),
+                                color: isActive ? '#F5821F' : isDone ? '#10B981' : '#94a3b8',
                                 fontWeight: isActive ? '700' : '500',
                                 textAlign: 'center',
-                              }}>
-                                {stageLabels[idx]}
+                              }} numberOfLines={2}>
+                                {stage.label}
                               </Text>
                             </View>
                           )
                         })}
                       </View>
-
-                      {/* Ürünler */}
-                      {s.siparis_urunleri && Array.isArray(s.siparis_urunleri) && s.siparis_urunleri.length > 0 && (
-                        <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#e2e8f0' }}>
-                          {s.siparis_urunleri.map((u: any) => (
-                            <Text key={String(u.id)} style={{ fontSize: 12, color: '#475569', marginBottom: 2 }}>
-                              {u.adet}x {u.urun_adi} — ₺{Number(u.birim_fiyat || 0).toLocaleString('tr-TR')}
-                            </Text>
-                          ))}
-                        </View>
-                      )}
                     </View>
                   )
                 })
@@ -2100,44 +2124,73 @@ export default function ProfilScreen() {
                   </Text>
                 </View>
               ) : (
-                gecmisTumSiparisler.map((s: any) => {
-                  const tesisAd = s.tesisler?.ad || 'Bilinmeyen Tesis'
-                  const tarih = new Date(s.created_at).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', year: 'numeric' })
-                  const isIptal = s.durum === 'iptal' || s.durum === 'iptal_edildi'
-                  return (
-                    <View
-                      key={String(s.id)}
-                      style={{
-                        backgroundColor: '#fff',
-                        borderRadius: 10,
-                        padding: 12,
-                        marginBottom: 8,
-                        borderWidth: StyleSheet.hairlineWidth,
-                        borderColor: '#e2e8f0',
-                      }}
-                    >
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                        <Text style={{ fontSize: 13, fontWeight: '700', color: '#0f172a', flex: 1 }} numberOfLines={1}>
-                          {tesisAd}
-                        </Text>
-                        <Text style={{ fontSize: 13, fontWeight: '700', color: isIptal ? '#94a3b8' : '#F5821F' }}>
-                          ₺{Number(s.toplam || 0).toLocaleString('tr-TR')}
-                        </Text>
-                      </View>
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Text style={{ fontSize: 11, color: '#64748b' }}>{tarih}</Text>
-                        <Text style={{
-                          fontSize: 11,
-                          fontWeight: '600',
-                          color: isIptal ? '#94a3b8' : '#10B981',
-                          textTransform: 'capitalize',
-                        }}>
-                          {isIptal ? 'İptal' : 'Teslim Edildi'}
-                        </Text>
-                      </View>
+                (() => {
+                  const gruplar: Record<string, any[]> = {}
+                  gecmisTumSiparisler.forEach((s: any) => {
+                    const d = new Date(s.created_at)
+                    const key = d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric', weekday: 'long' })
+                    if (!gruplar[key]) gruplar[key] = []
+                    gruplar[key].push(s)
+                  })
+                  return Object.entries(gruplar).map(([tarihLabel, siparisler]) => (
+                    <View key={tarihLabel} style={{ marginBottom: 14 }}>
+                      <Text style={{ fontSize: 10, fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>
+                        {'── '}{tarihLabel}{' ──'}
+                      </Text>
+                      {siparisler.map((s: any) => {
+                        const tesisAd = s.tesisler?.ad || 'Bilinmeyen Tesis'
+                        const saat = new Date(s.created_at).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
+                        const kalemleri: any[] = Array.isArray(s.siparis_kalemleri) ? s.siparis_kalemleri : []
+                        const isIptal = s.durum === 'iptal' || s.durum === 'iptal_edildi'
+                        return (
+                          <View
+                            key={String(s.id)}
+                            style={{
+                              backgroundColor: '#fff',
+                              borderRadius: 10,
+                              padding: 12,
+                              marginBottom: 8,
+                              borderWidth: StyleSheet.hairlineWidth,
+                              borderColor: '#e2e8f0',
+                            }}
+                          >
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+                              <View style={{ flex: 1, marginRight: 8 }}>
+                                <Text style={{ fontSize: 13, fontWeight: '800', color: '#0f172a' }}>
+                                  Sipariş #{String(s.id).slice(-5)}
+                                </Text>
+                                <Text style={{ fontSize: 11, color: '#64748b', marginTop: 1 }} numberOfLines={1}>{tesisAd}</Text>
+                              </View>
+                              <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                                <Text style={{ fontSize: 11, color: '#94a3b8' }}>{saat}</Text>
+                                <View style={{
+                                  backgroundColor: isIptal ? '#fef2f2' : '#f0fdf4',
+                                  borderWidth: 1,
+                                  borderColor: isIptal ? '#fecaca' : '#bbf7d0',
+                                  borderRadius: 6,
+                                  paddingHorizontal: 8,
+                                  paddingVertical: 2,
+                                }}>
+                                  <Text style={{ fontSize: 10, fontWeight: '800', color: isIptal ? '#b91c1c' : '#16a34a' }}>
+                                    {isIptal ? '✗ İptal' : '✓ Teslim'}
+                                  </Text>
+                                </View>
+                              </View>
+                            </View>
+                            {kalemleri.length > 0 && (
+                              <Text style={{ fontSize: 11, color: '#64748b', marginTop: 4 }} numberOfLines={2}>
+                                {kalemleri.map((u: any, i: number) => `${u.ad} ×${u.adet}${i < kalemleri.length - 1 ? ' · ' : ''}`).join('')}
+                              </Text>
+                            )}
+                            <Text style={{ fontSize: 13, fontWeight: '700', color: '#0f172a', textAlign: 'right', marginTop: 6 }}>
+                              ₺{Number(s.toplam || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                            </Text>
+                          </View>
+                        )
+                      })}
                     </View>
-                  )
-                })
+                  ))
+                })()
               )}
             </View>
           </View>
@@ -3010,28 +3063,43 @@ const styles = StyleSheet.create({
   btnRezYapText: { color: '#fff', fontWeight: '800', fontSize: 15 },
   altSekmeBar: {
     marginHorizontal: 12,
-    marginTop: 8,
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    paddingVertical: 4,
+    marginTop: 12,
+    marginBottom: 4,
+    backgroundColor: '#f1f5f9',
+    borderRadius: 16,
+    paddingVertical: 6,
+    shadowColor: '#0A1628',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 2,
   },
   altSekmeBarContent: {
-    paddingHorizontal: 16,
-    paddingRight: 40,
-    gap: 8,
+    paddingHorizontal: 6,
+    paddingRight: 12,
+    paddingVertical: 4,
+    gap: 4,
     flexDirection: 'row',
     alignItems: 'center',
   },
-  altSekmeItem: { flexShrink: 0, alignItems: 'center', paddingVertical: 10 },
-  altSekmeText: { fontSize: 12, fontWeight: '600', color: '#94a3b8', flexShrink: 0 },
-  altSekmeTextActive: { color: '#0ABAB5', fontWeight: '800' },
-  altSekmeUnderline: {
-    marginTop: 6,
-    height: 3,
-    width: '60%',
-    backgroundColor: '#0ABAB5',
-    borderRadius: 2,
+  altSekmeItem: {
+    flexShrink: 0,
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 20,
   },
+  altSekmeItemActive: {
+    backgroundColor: '#0ABAB5',
+    shadowColor: '#0ABAB5',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  altSekmeText: { fontSize: 12, fontWeight: '600', color: '#64748b', flexShrink: 0 },
+  altSekmeTextActive: { color: '#fff', fontWeight: '700' },
+  altSekmeUnderline: { marginTop: 0, height: 0, width: 0 },
   filtreScroll: { flexDirection: 'row', gap: 8, paddingBottom: 12, flexWrap: 'wrap' },
   filtreChip: {
     paddingHorizontal: 12,
