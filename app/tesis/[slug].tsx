@@ -852,9 +852,20 @@ export default function TesisDetailScreen() {
                     Linking.openURL(url)
                   })
                 }}
-                style={{ marginLeft: 8 }}
+                activeOpacity={0.82}
+                style={{
+                  marginLeft: 8,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 4,
+                  backgroundColor: '#0A1628',
+                  paddingHorizontal: 12,
+                  paddingVertical: 6,
+                  borderRadius: 20,
+                }}
               >
-                <Text style={{ fontSize: 13, color: '#0ABAB5', fontWeight: '700' }}>Haritada gör</Text>
+                <Ionicons name="location-sharp" size={13} color="#fff" />
+                <Text style={{ fontSize: 12, color: '#fff', fontWeight: '600' }}>Haritada gör</Text>
               </TouchableOpacity>
             ) : null}
           </View>
