@@ -124,6 +124,7 @@ type TesisDetailRow = {
   kurallar: unknown
   kampanya_notlari: unknown
   telefon: string | null
+  iletisim_numarasi: string | null
   enlem: number | null
   boylam: number | null
 }
@@ -338,7 +339,7 @@ export default function TesisDetailScreen() {
     void supabase
       .from('tesisler')
       .select(
-        'id, ad, slug, sehir, ilce, fotograflar, puan, kisa_aciklama, aciklama, detayli_aciklama, imkanlar, calisma_saatleri, adres, video_url, ulasim, kurallar, kampanya_notlari, telefon, enlem, boylam',
+        'id, ad, slug, sehir, ilce, fotograflar, puan, kisa_aciklama, aciklama, detayli_aciklama, imkanlar, calisma_saatleri, adres, video_url, ulasim, kurallar, kampanya_notlari, telefon, iletisim_numarasi, enlem, boylam',
       )
       .eq('slug', slug)
       .maybeSingle()
@@ -2126,20 +2127,26 @@ export default function TesisDetailScreen() {
             <Ionicons name="arrow-back-outline" size={18} color="#fff" />
             <Text style={styles.stickyBackBtnText}>Geri Dön</Text>
           </TouchableOpacity>
-          {row.telefon?.trim() ? (
-            <TouchableOpacity
-              style={styles.stickyCallBtn}
-              activeOpacity={0.9}
-              onPress={() => {
-                void Linking.openURL(`tel:${String(row.telefon).replace(/\s/g, '')}`)
-              }}
-              accessibilityRole="button"
-              accessibilityLabel="Tesisi Ara"
-            >
-              <Ionicons name="call-outline" size={18} color="#fff" />
-              <Text style={styles.stickyCallBtnText}>Tesisi Ara</Text>
-            </TouchableOpacity>
-          ) : null}
+          {(() => {
+            const telNum = (row.iletisim_numarasi?.trim() || row.telefon?.trim()) ?? ''
+            const aktif = telNum.length > 0
+            return (
+              <TouchableOpacity
+                style={[styles.stickyCallBtn, !aktif && { opacity: 0.5 }]}
+                activeOpacity={aktif ? 0.9 : 1}
+                disabled={!aktif}
+                onPress={() => {
+                  if (!aktif) return
+                  void Linking.openURL(`tel:${telNum.replace(/[\s\-\(\)]/g, '')}`)
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Tesisi Ara"
+              >
+                <Ionicons name="call-outline" size={18} color="#fff" />
+                <Text style={styles.stickyCallBtnText}>Tesisi Ara</Text>
+              </TouchableOpacity>
+            )
+          })()}
           <TouchableOpacity
             style={[styles.stickyReserveBtn, rezButtonLoading && { opacity: 0.85 }]}
             activeOpacity={0.9}
