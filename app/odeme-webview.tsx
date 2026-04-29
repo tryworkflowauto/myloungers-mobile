@@ -48,7 +48,7 @@ export default function OdemeWebview() {
     }
   }, [rezId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Katman 2 — Polling: Her 2 saniyede DB'yi sorgula (RLS/publication bağımsız, %100 çalışır)
+  // Katman 2 — Polling: Her 800ms'de DB'yi sorgula (RLS/publication bağımsız, %100 çalışır)
   useEffect(() => {
     if (!rezId) return
     let stopped = false
@@ -64,7 +64,7 @@ export default function OdemeWebview() {
         clearInterval(interval)
         goToProfile()
       }
-    }, 2000)
+    }, 800)
     // 5 dakika sonra otomatik dur
     const timeout = setTimeout(() => {
       stopped = true

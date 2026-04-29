@@ -6,7 +6,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera'
 import { Audio } from 'expo-av'
 import * as Clipboard from 'expo-clipboard'
 import { LinearGradient } from 'expo-linear-gradient'
-import { useRouter } from 'expo-router'
+import { useFocusEffect, useRouter } from 'expo-router'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
     ActivityIndicator,
@@ -255,6 +255,24 @@ export default function ProfilScreen() {
   const [aktifSezlonglar, setAktifSezlonglar] = useState<any[]>([])
   const [sezlongMap, setSezlongMap] = useState<Record<string, string>>({})
   const [epostaBildirim, setEpostaBildirim] = useState(true)
+  const handleEpostaBildirimChange = useCallback(async (value: boolean) => {
+    setEpostaBildirim(value)
+    const { data: { user }, error: authErr } = await supabase.auth.getUser()
+    if (authErr || !user?.id) {
+      console.warn('[eposta_bildirim] auth hatası:', authErr)
+      return
+    }
+    const { data: updData, error: updErr } = await supabase
+      .from('kullanicilar')
+      .update({ eposta_bildirim: value })
+      .eq('id', user.id)
+      .select('id, eposta_bildirim')
+    console.log('[eposta_bildirim] UPDATE response — data:', updData, 'error:', updErr)
+    if (updErr) {
+      console.error('[eposta_bildirim] UPDATE hatası:', updErr)
+      setEpostaBildirim(!value)
+    }
+  }, [])
   const [modalParola, setModalParola] = useState(false)
   const [modalKvkk, setModalKvkk] = useState(false)
   const [mevcutParola, setMevcutParola] = useState('')
@@ -509,7 +527,7 @@ export default function ProfilScreen() {
 
       const { data, error } = await supabase
         .from('kullanicilar')
-        .select('id, ad, soyad, telefon, email, sehir, dogum_tarihi, rol, created_at')
+        .select('id, ad, soyad, telefon, email, sehir, dogum_tarihi, rol, created_at, eposta_bildirim')
         .eq('email', user.email)
         .single()
 
@@ -534,6 +552,11 @@ export default function ProfilScreen() {
           sehir: data.sehir != null ? String(data.sehir) : '',
           dogumTarihi: d,
         })
+
+        // E-posta bildirim tercihini DB'den oku; kolon NULL ise varsayılan true
+        if (data.eposta_bildirim !== null && data.eposta_bildirim !== undefined) {
+          setEpostaBildirim(data.eposta_bildirim as boolean)
+        }
 
         const [rezResult, yorumResult, favResult] = await Promise.all([
           supabase
@@ -744,9 +767,16 @@ export default function ProfilScreen() {
     }
   }
 
-  useEffect(() => {
-    void loadProfil()
-  }, [])
+  // useFocusEffect: ilk mount'ta AND her odak kazanımında çalışır (tab geçişi, ödeme sonrası
+  // router.replace ile dönüş, vs.). useEffect([], []) yalnızca initial mount'ta çalıştığından
+  // ödeme sonrası veya başka sekmeden geçince 0 istatistik sorununun kökü burasıydı.
+  useFocusEffect(
+    useCallback(() => {
+      // loadingRef.current guard'ı eş zamanlı çalışmayı engeller; odak değişince
+      // bir önceki yükleme zaten tamamlandığından guard false'tur.
+      void loadProfil()
+    }, []),
+  )
 
   useEffect(() => {
     const iv = setInterval(() => setTick((t) => t + 1), 10000)
@@ -2379,7 +2409,7 @@ export default function ProfilScreen() {
                       </View>
                       <Switch
                         value={epostaBildirim}
-                        onValueChange={setEpostaBildirim}
+                        onValueChange={(v) => void handleEpostaBildirimChange(v)}
                         trackColor={{ false: '#cbd5e1', true: '#99f6e4' }}
                         thumbColor={epostaBildirim ? '#0ABAB5' : '#f4f4f5'}
                       />

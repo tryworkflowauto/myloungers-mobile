@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons'
 import { Image } from 'expo-image'
-import { useLocalSearchParams, useRouter } from 'expo-router'
-import { useEffect, useMemo, useState } from 'react'
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Dimensions,
@@ -305,7 +305,7 @@ export default function TesisDetailScreen() {
     d.setHours(12, 0, 0, 0)
     return d
   })
-  const [acikHakkinda, setAcikHakkinda] = useState(true)
+  const [acikHakkinda, setAcikHakkinda] = useState(false)
   const [acikImkanlar, setAcikImkanlar] = useState(false)
   const [acikSaatler, setAcikSaatler] = useState(false)
   const [acikVideo, setAcikVideo] = useState(false)
@@ -318,6 +318,15 @@ export default function TesisDetailScreen() {
   const [yorumlarList, setYorumlarList] = useState<YorumRow[]>([])
   const [acikYorumlar, setAcikYorumlar] = useState(false)
   const [acikPlan, setAcikPlan] = useState(false)
+  const [rezButtonLoading, setRezButtonLoading] = useState(false)
+  const [validUyariVisible, setValidUyariVisible] = useState(false)
+  const [validUyariMesaj, setValidUyariMesaj] = useState('')
+
+  const scrollViewRef = useRef<ScrollView>(null)
+  const padHLayoutY = useRef(0)
+  const planSectionLayoutY = useRef(0)
+  // Realtime channel callback'inin güncel rezerve sorgusunu tetiklemesi için ref
+  const refreshRezervedRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
     if (!slug) {
@@ -490,26 +499,45 @@ export default function TesisDetailScreen() {
     if (!row?.id) return
     if (!secilenTarih) {
       setRezervedByType({ dolu: new Set(), rezerve: new Set(), bakim: new Set(), kilitli: new Set() })
+      refreshRezervedRef.current = null
       return
     }
+    let cancelled = false
     const tarihStr = secilenTarih.toISOString().split('T')[0]
-    void supabase
-      .from('rezervasyonlar')
-      .select('sezlong_id, sezlong_ids, musteri_adi')
-      .eq('tesis_id', row.id)
-      .lte('baslangic_tarih', tarihStr)
-      .gte('bitis_tarih', tarihStr)
-      .in('durum', ['aktif', 'onaylandi'])
-      .then(({ data }) => {
-        if (!data) return
+
+    // Sorguyu ayrı fonksiyon olarak tanımla; hem ilk yüklemede hem realtime
+    // event'i geldiğinde refreshRezervedRef üzerinden çağrılabilir.
+    function runRezervedQuery() {
+      const nowIso = new Date().toISOString()
+      void Promise.all([
+        supabase
+          .from('rezervasyonlar')
+          .select('sezlong_id, sezlong_ids, musteri_adi')
+          .eq('tesis_id', row!.id)
+          .lte('baslangic_tarih', tarihStr)
+          .gte('bitis_tarih', tarihStr)
+          .in('durum', ['aktif', 'onaylandi']),
+        supabase
+          .from('rezervasyonlar')
+          .select('sezlong_id, sezlong_ids, musteri_adi')
+          .eq('tesis_id', row!.id)
+          .lte('baslangic_tarih', tarihStr)
+          .gte('bitis_tarih', tarihStr)
+          .eq('durum', 'bekliyor')
+          .gt('rezerveli_kadar', nowIso),
+      ]).then(([onayliResult, bekleyenResult]) => {
+        if (cancelled) return
+        const data = [
+          ...(onayliResult.data ?? []),
+          ...(bekleyenResult.data ?? []),
+        ] as { sezlong_id: string | null; sezlong_ids: string[] | null; musteri_adi: string | null }[]
         const newByType = {
           rezerve: new Set<string>(),
           bakim: new Set<string>(),
           kilitli: new Set<string>(),
           dolu: new Set<string>(),
         }
-        for (const r of data as { sezlong_id: string | null; sezlong_ids: string[] | null; musteri_adi: string | null }[]) {
-          // Her iki alandan UUID'leri topla (eski tek-satır + yeni döngülü INSERT)
+        for (const r of data) {
           const ids = new Set<string>()
           if (r.sezlong_id) ids.add(r.sezlong_id)
           if (Array.isArray(r.sezlong_ids)) {
@@ -517,7 +545,6 @@ export default function TesisDetailScreen() {
               if (id && typeof id === 'string') ids.add(id)
             }
           }
-          // musteri_adi'na göre kategorize et (web ile aynı mantık)
           const musteriAdi = (r.musteri_adi ?? '').toUpperCase()
           let tip: keyof typeof newByType = 'dolu'
           if (musteriAdi === 'İŞLETME REZERVİ') tip = 'rezerve'
@@ -527,7 +554,45 @@ export default function TesisDetailScreen() {
         }
         setRezervedByType(newByType)
       })
+    }
+
+    // Ref'e ata (realtime channel callback'i bu ref'i kullanır)
+    refreshRezervedRef.current = runRezervedQuery
+    runRezervedQuery()
+
+    return () => {
+      cancelled = true
+      refreshRezervedRef.current = null
+    }
   }, [row?.id, secilenTarih])
+
+  // Realtime channel: rezervasyonlar tablosunu dinle, olay gelince doluluk sorgusunu yenile
+  useEffect(() => {
+    if (!row?.id || !secilenTarih) return
+    const tesisId = row.id as string
+    const tarihStr = secilenTarih.toISOString().split('T')[0]
+    // Benzersiz suffix: aynı isimde mevcut channel'ın döndürülmesini (deduplication) önler
+    const uid = Math.random().toString(36).slice(2)
+    const channel = supabase
+      .channel(`tesis-rezervasyonlar-${tesisId}-${tarihStr}-${uid}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'rezervasyonlar', filter: `tesis_id=eq.${tesisId}` },
+        () => {
+          refreshRezervedRef.current?.()
+        },
+      )
+      .subscribe()
+    return () => {
+      void supabase.removeChannel(channel)
+    }
+  }, [row?.id, secilenTarih])
+
+  useFocusEffect(
+    useCallback(() => {
+      setRezButtonLoading(false)
+    }, []),
+  )
 
   const planCalendarRows = useMemo(() => {
     const y = planCalendarViewMonth.getFullYear()
@@ -696,6 +761,7 @@ export default function TesisDetailScreen() {
       </View>
 
       <ScrollView
+        ref={scrollViewRef}
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -737,7 +803,10 @@ export default function TesisDetailScreen() {
           </View>
         )}
 
-        <View style={styles.padH}>
+        <View
+          style={styles.padH}
+          onLayout={(e) => { padHLayoutY.current = e.nativeEvent.layout.y }}
+        >
           <Text style={styles.tesisAd}>{row.ad}</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
             {[1, 2, 3, 4, 5].map((s) => (
@@ -941,7 +1010,10 @@ export default function TesisDetailScreen() {
           ) : null}
 
           {gruplar.length > 0 && (
-            <View style={[styles.card, { padding: 0, overflow: 'hidden' }]}>
+            <View
+              style={[styles.card, { padding: 0, overflow: 'hidden' }]}
+              onLayout={(e) => { planSectionLayoutY.current = e.nativeEvent.layout.y }}
+            >
               <View style={{ backgroundColor: '#0d9488', padding: 16 }}>
                 <TouchableOpacity
                   onPress={() => setAcikPlan(!acikPlan)}
@@ -2013,6 +2085,24 @@ export default function TesisDetailScreen() {
         </View>
       </Modal>
 
+      {/* Tarih / şezlong validasyon uyarı modalı */}
+      <Modal visible={validUyariVisible} animationType="fade" transparent statusBarTranslucent>
+        <View style={styles.paxModalBackdrop}>
+          <View style={styles.paxModalCard}>
+            <Text style={styles.paxModalIcon}>⚠️</Text>
+            <Text style={styles.paxModalTitle}>Eksik Bilgi</Text>
+            <Text style={styles.paxModalMsg}>{validUyariMesaj}</Text>
+            <TouchableOpacity
+              style={styles.paxModalBtn}
+              activeOpacity={0.85}
+              onPress={() => setValidUyariVisible(false)}
+            >
+              <Text style={styles.paxModalBtnText}>Tamam</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       <View style={[styles.stickyBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
         <View style={styles.stickyBarRow}>
           <TouchableOpacity
@@ -2040,64 +2130,135 @@ export default function TesisDetailScreen() {
             </TouchableOpacity>
           ) : null}
           <TouchableOpacity
-            style={styles.stickyReserveBtn}
+            style={[styles.stickyReserveBtn, rezButtonLoading && { opacity: 0.85 }]}
             activeOpacity={0.9}
-            onPress={() => {
-              const allIds = [...secilenSezlongIds]
-              const firstId = allIds[0]
-              const secilenSezlong = firstId
-                ? sezlonglar.find((s) => s.id === firstId)
-                : undefined
-              const secilenGrup = secilenSezlong
-                ? gruplar.find((g) => g.id === secilenSezlong.grup_id)
-                : undefined
-              const fiyatVal = secilenGrup?.fiyat ?? secilenGrup?.fiyat_hafici ?? null
-              // Tüm seçili şezlongların adlarını ve fiyat toplamını hesapla
-              const allSezlongAdi = allIds
-                .map((id) => {
+            disabled={rezButtonLoading}
+            onPress={async () => {
+              if (rezButtonLoading) return
+
+              if (!secilenTarih) {
+                setValidUyariMesaj('Lütfen önce rezervasyon tarihini seçin.')
+                setValidUyariVisible(true)
+                setAcikPlan(true)
+                scrollViewRef.current?.scrollTo({
+                  y: padHLayoutY.current + planSectionLayoutY.current - 12,
+                  animated: true,
+                })
+                openPlanDatePicker()
+                return
+              }
+
+              if (secilenSezlongIds.size === 0) {
+                setValidUyariMesaj('Lütfen en az bir şezlong seçin.')
+                setValidUyariVisible(true)
+                setAcikPlan(true)
+                scrollViewRef.current?.scrollTo({
+                  y: padHLayoutY.current + planSectionLayoutY.current - 12,
+                  animated: true,
+                })
+                return
+              }
+
+              setRezButtonLoading(true)
+              // React Native'e spinner'ı commit etmesi için bir tick ver,
+              // aksi hâlde router.push aynı senkron blokta çalışır ve re-render olmaz.
+              await new Promise<void>((resolve) => setTimeout(resolve, 0))
+              try {
+                const allIds = [...secilenSezlongIds]
+                const firstId = allIds[0]
+                const secilenSezlong = firstId
+                  ? sezlonglar.find((s) => s.id === firstId)
+                  : undefined
+                const secilenGrup = secilenSezlong
+                  ? gruplar.find((g) => g.id === secilenSezlong.grup_id)
+                  : undefined
+                const fiyatVal = secilenGrup?.fiyat ?? secilenGrup?.fiyat_hafici ?? null
+                const allSezlongAdi = allIds
+                  .map((id) => {
+                    const sz = sezlonglar.find((s) => s.id === id)
+                    const gr = sz ? gruplar.find((g) => g.id === sz.grup_id) : undefined
+                    return sz ? `${gr?.ad ?? ''} ${sz.numara}`.trim() : ''
+                  })
+                  .filter(Boolean)
+                  .join(', ')
+                const toplamSezlongUcreti = allIds.reduce((sum, id) => {
                   const sz = sezlonglar.find((s) => s.id === id)
                   const gr = sz ? gruplar.find((g) => g.id === sz.grup_id) : undefined
-                  return sz ? `${gr?.ad ?? ''} ${sz.numara}`.trim() : ''
-                })
-                .filter(Boolean)
-                .join(', ')
-              const toplamSezlongUcreti = allIds.reduce((sum, id) => {
-                const sz = sezlonglar.find((s) => s.id === id)
-                const gr = sz ? gruplar.find((g) => g.id === sz.grup_id) : undefined
-                const f = gr?.fiyat ?? gr?.fiyat_hafici ?? 0
-                return sum + (Number(f) || 0)
-              }, 0)
-              const sezlongFiyatlar = allIds
-                .map((id) => {
-                  const sz = sezlonglar.find((s) => s.id === id)
+                  const f = gr?.fiyat ?? gr?.fiyat_hafici ?? 0
+                  return sum + (Number(f) || 0)
+                }, 0)
+                const sezlongFiyatlar = allIds
+                  .map((id) => {
+                    const sz = sezlonglar.find((s) => s.id === id)
+                    const gr = sz ? gruplar.find((g) => g.id === sz.grup_id) : undefined
+                    return String(gr?.fiyat ?? gr?.fiyat_hafici ?? 0)
+                  })
+                  .join(',')
+
+                // ── Seat hold: web goRes ile aynı pattern ────────────────────────────
+                // Her seçili şezlong için durum=bekliyor + rezerveli_kadar=NOW()+10dk
+                // INSERT yapılır. Bu kayıtlar rezervasyon-ozet'te 10dk boyunca koltuk
+                // kilitler; vazgeçilirse iptal edilir, ödeme yapılırsa beklemede'ye geçer.
+                const { data: { user: authUser } } = await supabase.auth.getUser()
+                const rezerveliKadar = new Date(Date.now() + 10 * 60 * 1000).toISOString()
+                const tarihIso = secilenTarih.toISOString().split('T')[0]
+                const bekleyenIds: string[] = []
+                for (const sezlongId of allIds) {
+                  const sz = sezlonglar.find((s) => s.id === sezlongId)
                   const gr = sz ? gruplar.find((g) => g.id === sz.grup_id) : undefined
-                  return String(gr?.fiyat ?? gr?.fiyat_hafici ?? 0)
+                  const fiyatBu = Number(gr?.fiyat ?? gr?.fiyat_hafici ?? 0)
+                  const { data: rezData } = await supabase
+                    .from('rezervasyonlar')
+                    .insert({
+                      tesis_id: row.id,
+                      kullanici_id: authUser?.id ?? null,
+                      sezlong_id: sezlongId,
+                      sezlong_ids: [sezlongId],
+                      baslangic_tarih: tarihIso,
+                      bitis_tarih: tarihIso,
+                      kisi_sayisi: 1,
+                      toplam_tutar: fiyatBu,
+                      durum: 'bekliyor',
+                      rezerveli_kadar: rezerveliKadar,
+                    })
+                    .select('id')
+                    .single()
+                  if (rezData?.id) bekleyenIds.push(String(rezData.id))
+                }
+                // ────────────────────────────────────────────────────────────────────
+
+                router.push({
+                  pathname: '/rezervasyon-ozet',
+                  params: {
+                    tesis_id: row.id,
+                    tesis_adi: row.ad,
+                    tesis_slug: slug,
+                    grup_id: secilenGrup?.id ?? '',
+                    grup_adi: secilenGrup?.ad ?? '',
+                    sezlong_id: secilenSezlong?.id ?? '',
+                    sezlong_ids: allIds.join(','),
+                    sezlong_adi: allSezlongAdi,
+                    sezlong_fiyatlar: sezlongFiyatlar,
+                    fiyat: fiyatVal != null ? String(fiyatVal) : '',
+                    toplam_sezlong_ucreti: String(toplamSezlongUcreti),
+                    tarih: secilenTarih.toISOString().split('T')[0],
+                    sure: '',
+                    kisi_sayisi: String(paxCount),
+                    tesis_fotograf: parsePhotoSrcs(row.fotograflar)[0] ?? '',
+                    bekleyen_rez_ids: bekleyenIds.join(','),
+                  },
                 })
-                .join(',')
-              router.push({
-                pathname: '/rezervasyon-ozet',
-                params: {
-                  tesis_id: row.id,
-                  tesis_adi: row.ad,
-                  tesis_slug: slug,
-                  grup_id: secilenGrup?.id ?? '',
-                  grup_adi: secilenGrup?.ad ?? '',
-                  sezlong_id: secilenSezlong?.id ?? '',
-                  sezlong_ids: allIds.join(','),
-                  sezlong_adi: allSezlongAdi,
-                  sezlong_fiyatlar: sezlongFiyatlar,
-                  fiyat: fiyatVal != null ? String(fiyatVal) : '',
-                  toplam_sezlong_ucreti: String(toplamSezlongUcreti),
-                  tarih: secilenTarih ? secilenTarih.toISOString().split('T')[0] : '',
-                  sure: '',
-                  kisi_sayisi: String(paxCount),
-                  tesis_fotograf: parsePhotoSrcs(row.fotograflar)[0] ?? '',
-                },
-              })
+              } catch {
+                setRezButtonLoading(false)
+              }
             }}
             accessibilityRole="button"
           >
-            <Text style={styles.stickyReserveBtnText}>Rezervasyon Yap</Text>
+            {rezButtonLoading ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Text style={styles.stickyReserveBtnText}>Rezervasyon Yap</Text>
+            )}
           </TouchableOpacity>
         </View>
       </View>

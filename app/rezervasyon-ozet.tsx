@@ -1,9 +1,10 @@
 import { Ionicons } from '@expo/vector-icons'
-import { useLocalSearchParams, useRouter } from 'expo-router'
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
+  BackHandler,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -103,6 +104,7 @@ export default function RezervasyonOzet() {
     sure?: string
     kisi_sayisi?: string
     tesis_fotograf?: string
+    bekleyen_rez_ids?: string
   }>()
 
   const tesis_id = params.tesis_id
@@ -132,6 +134,13 @@ export default function RezervasyonOzet() {
     return addCalendarDays(tarih, sureNum - 1)
   }, [tarih, sureNum])
 
+  // Tesis sayfasında oluşturulan bekliyor rezervasyon ID'leri (seat hold)
+  const bekleyenRezIds = useMemo<string[]>(() => {
+    const raw = params.bekleyen_rez_ids
+    if (!raw) return []
+    return String(raw).split(',').map((s) => s.trim()).filter(Boolean)
+  }, [params.bekleyen_rez_ids])
+
   // ─── Mevcut state'ler ───────────────────────────────────────────────────────
   const [kisiler, setKisiler] = useState<KisiForm[]>(() =>
     Array.from({ length: Math.max(1, kisiNum) }, emptyKisi),
@@ -145,6 +154,7 @@ export default function RezervasyonOzet() {
   const [profilYukleniyor, setProfilYukleniyor] = useState(true)
   const [odemeYukleniyor, setOdemeYukleniyor] = useState(false)
   const resInFlightRef = useRef(false)
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // ─── Yeni state'ler ─────────────────────────────────────────────────────────
   const [kalanSure, setKalanSure] = useState(600) // 10 dakika
@@ -158,24 +168,45 @@ export default function RezervasyonOzet() {
   const [sureDolduModal, setSureDolduModal] = useState(false)
 
   // ─── Geri sayım sayacı ──────────────────────────────────────────────────────
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setKalanSure((s) => {
-        if (s <= 1) {
-          clearInterval(interval)
-          setSureDoldu(true)
-          return 0
+  // useFocusEffect ile: ekran odaklanınca başlar, odak kaybolunca (odeme-webview'e
+  // geçilince) temizlenir. useEffect+[] kullanılsaydı komponent unmount olana kadar
+  // timer çalışmaya devam ederdi ve profil sayfasında Süre Doldu modalı görünürdü.
+  useFocusEffect(
+    useCallback(() => {
+      timerRef.current = setInterval(() => {
+        setKalanSure((s) => {
+          if (s <= 1) {
+            if (timerRef.current) clearInterval(timerRef.current)
+            setSureDoldu(true)
+            return 0
+          }
+          return s - 1
+        })
+      }, 1000)
+      return () => {
+        if (timerRef.current) {
+          clearInterval(timerRef.current)
+          timerRef.current = null
         }
-        return s - 1
-      })
-    }, 1000)
-    return () => clearInterval(interval)
-  }, [])
+      }
+    }, []),
+  )
 
   useEffect(() => {
     if (!sureDoldu) return
+    // Süre dolunca bekleyen seat-hold'ı iptal et, ardından modal göster
+    void iptalBekleyenRez()
     setSureDolduModal(true)
-  }, [sureDoldu, router])
+  }, [sureDoldu, iptalBekleyenRez])
+
+  // Android donanım geri tuşunu yakala — seat-hold iptal ederek geri git
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      void handleGeri()
+      return true
+    })
+    return () => sub.remove()
+  }, [handleGeri])
 
   // ─── Tesis bilgileri (Supabase) ──────────────────────────────────────────────
   useEffect(() => {
@@ -247,6 +278,22 @@ export default function RezervasyonOzet() {
     void loadProfil()
   }, [loadProfil])
 
+  // Bekleyen (bekliyor) rezervasyonları iptal et — vazgeçme veya süre dolması durumunda
+  const iptalBekleyenRez = useCallback(async () => {
+    if (bekleyenRezIds.length === 0) return
+    await supabase
+      .from('rezervasyonlar')
+      .update({ durum: 'iptal' })
+      .in('id', bekleyenRezIds)
+      .eq('durum', 'bekliyor')
+  }, [bekleyenRezIds])
+
+  // Geri butonuna basılınca önce seat-hold'ı iptal et, sonra geri git
+  const handleGeri = useCallback(async () => {
+    await iptalBekleyenRez()
+    router.back()
+  }, [iptalBekleyenRez, router])
+
   const formatTl = (n: number) =>
     `${n.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TL`
 
@@ -316,49 +363,64 @@ export default function RezervasyonOzet() {
         ? String(sezlong_adi).split(',').map((s) => s.trim())
         : []
 
-      if (sezlongIdList.length === 0) {
+      if (sezlongIdList.length === 0 && bekleyenRezIds.length === 0) {
         Alert.alert('Hata', 'Şezlong seçimi eksik.')
         return
       }
 
-      // Her şezlong için ayrı INSERT
-      const insertedIds: string[] = []
-      for (let i = 0; i < sezlongIdList.length; i++) {
-        const thisSezlongId = sezlongIdList[i]
-        // Bireysel fiyat: sezlong_fiyatlar'dan al, yoksa fiyatBirim'e dön
-        const thisFiyat = sezlongFiyatlarArr[i] != null ? sezlongFiyatlarArr[i] : fiyatBirim
-        const thisToplam = Number((thisFiyat * sureNum).toFixed(2))
+      // Tesis sayfasında oluşturulan bekliyor kayıtları varsa: durum→beklemede UPDATE yap.
+      // Yoksa (eski akış veya bekliyor insert başarısız olduysa): yeni INSERT döngüsü çalış.
+      let insertedIds: string[] = []
 
-        // Rezervasyon kodu: "MYL-DDMMYYYY-G1" (grup ilk harfi + sezlong numarası)
-        const thisSezlongAdi = sezlongAdlari[i] ?? `${i + 1}`
-        const thisGrupPrefix = thisSezlongAdi.charAt(0).toUpperCase() || 'X'
-        const thisSezlongNo = thisSezlongAdi.replace(/^[^\d]*/, '')
-        const thisRezKodu = `MYL-${tarihFormatli}-${thisGrupPrefix}${thisSezlongNo}`
-
-        const insertPayload: Record<string, unknown> = {
-          tesis_id: uuidOrNull(tesis_id),
-          kullanici_id: user.id,
-          sezlong_id: thisSezlongId,
-          sezlong_ids: [thisSezlongId],
-          baslangic_tarih: tarih,
-          bitis_tarih: bitisTarih || tarih,
-          durum: 'beklemede',
-          toplam_tutar: thisToplam,
-          kisi_sayisi: 1,
-          rezervasyon_kodu: thisRezKodu,
-        }
-
-        const { data: rezData, error: rezError } = await supabase
+      if (bekleyenRezIds.length > 0) {
+        const { error: updErr } = await supabase
           .from('rezervasyonlar')
-          .insert(insertPayload)
-          .select('id')
-          .single()
-
-        if (rezError || !rezData) {
-          Alert.alert('Hata', 'Rezervasyon oluşturulamadı')
+          .update({ durum: 'beklemede' })
+          .in('id', bekleyenRezIds)
+        if (updErr) {
+          Alert.alert('Hata', 'Rezervasyon güncellenemedi.')
           return
         }
-        insertedIds.push(rezData.id as string)
+        insertedIds = [...bekleyenRezIds]
+      } else {
+        // Fallback: yeni INSERT (eski akış veya bekliyor insert başarısız olduysa)
+        for (let i = 0; i < sezlongIdList.length; i++) {
+          const thisSezlongId = sezlongIdList[i]
+          // Bireysel fiyat: sezlong_fiyatlar'dan al, yoksa fiyatBirim'e dön
+          const thisFiyat = sezlongFiyatlarArr[i] != null ? sezlongFiyatlarArr[i] : fiyatBirim
+          const thisToplam = Number((thisFiyat * sureNum).toFixed(2))
+
+          // Rezervasyon kodu: "MYL-DDMMYYYY-G1" (grup ilk harfi + sezlong numarası)
+          const thisSezlongAdi = sezlongAdlari[i] ?? `${i + 1}`
+          const thisGrupPrefix = thisSezlongAdi.charAt(0).toUpperCase() || 'X'
+          const thisSezlongNo = thisSezlongAdi.replace(/^[^\d]*/, '')
+          const thisRezKodu = `MYL-${tarihFormatli}-${thisGrupPrefix}${thisSezlongNo}`
+
+          const insertPayload: Record<string, unknown> = {
+            tesis_id: uuidOrNull(tesis_id),
+            kullanici_id: user.id,
+            sezlong_id: thisSezlongId,
+            sezlong_ids: [thisSezlongId],
+            baslangic_tarih: tarih,
+            bitis_tarih: bitisTarih || tarih,
+            durum: 'beklemede',
+            toplam_tutar: thisToplam,
+            kisi_sayisi: 1,
+            rezervasyon_kodu: thisRezKodu,
+          }
+
+          const { data: rezData, error: rezError } = await supabase
+            .from('rezervasyonlar')
+            .insert(insertPayload)
+            .select('id')
+            .single()
+
+          if (rezError || !rezData) {
+            Alert.alert('Hata', 'Rezervasyon oluşturulamadı')
+            return
+          }
+          insertedIds.push(rezData.id as string)
+        }
       }
 
       // İlk INSERT'in ID'si Paratika orderId olarak gider
@@ -424,7 +486,7 @@ export default function RezervasyonOzet() {
       >
         {/* ── Header ── */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} hitSlop={14} style={styles.headerBtn} accessibilityRole="button">
+          <TouchableOpacity onPress={() => void handleGeri()} hitSlop={14} style={styles.headerBtn} accessibilityRole="button">
             <Ionicons name="chevron-back" size={26} color={TEAL} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Rezervasyon Özeti</Text>
