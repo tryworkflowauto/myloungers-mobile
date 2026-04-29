@@ -284,6 +284,7 @@ export default function ProfilScreen() {
   const [showQrScanner, setShowQrScanner] = useState(false)
   const qrHandledRef = useRef(false)
   const loadingRef = useRef(false)
+  const lastFetchRef = useRef<number>(0)
   const [modalSezlongAktifDegil, setModalSezlongAktifDegil] = useState(false)
   const [modalKodGir, setModalKodGir] = useState(false)
   const [kodInput, setKodInput] = useState('')
@@ -558,7 +559,8 @@ export default function ProfilScreen() {
           setEpostaBildirim(data.eposta_bildirim as boolean)
         }
 
-        const [rezResult, yorumResult, favResult] = await Promise.all([
+        // Yorumlar artık lazy yükleniyor (kullanıcı Yorumlarım tab'ına tıkladığında).
+        const [rezResult, favResult] = await Promise.all([
           supabase
             .from('rezervasyonlar')
             .select(
@@ -567,11 +569,6 @@ export default function ProfilScreen() {
             .eq('kullanici_id', data.id)
             .in('durum', ['onaylandi', 'aktif', 'tamamlandi', 'iptal', 'iptal_edildi'])
             .order('baslangic_tarih', { ascending: false }),
-          supabase
-            .from('yorumlar')
-            .select('id, yorum, puan, created_at, durum, tesisler(ad)')
-            .eq('kullanici_id', data.id)
-            .order('created_at', { ascending: false }),
           supabase
             .from('favoriler')
             .select('id, tesis_id, created_at, tesisler(ad, fotograflar, slug)')
@@ -753,9 +750,6 @@ export default function ProfilScreen() {
         } else {
         }
 
-        const yorumData = yorumResult.data
-        if (yorumData) setYorumlar(yorumData)
-
         const favData = favResult.data
         if (favData) setFavoriler(favData)
 
@@ -764,6 +758,7 @@ export default function ProfilScreen() {
     } finally {
       setLoading(false)
       loadingRef.current = false
+      lastFetchRef.current = Date.now()
     }
   }
 
@@ -772,8 +767,11 @@ export default function ProfilScreen() {
   // ödeme sonrası veya başka sekmeden geçince 0 istatistik sorununun kökü burasıydı.
   useFocusEffect(
     useCallback(() => {
-      // loadingRef.current guard'ı eş zamanlı çalışmayı engeller; odak değişince
-      // bir önceki yükleme zaten tamamlandığından guard false'tur.
+      // 30 saniye içinde tekrar odaklanılırsa sorgu atlanır (hızlı tab geçişi koruması).
+      // Pull-to-refresh her zaman bypass eder (onRefresh → loadProfil'i doğrudan çağırır).
+      // Ödeme sonrası router.replace çağrısı genellikle >=30s sonra gelir; dolayısıyla
+      // ödeme dönüşü cache'i bypass eder ve güncel rezervasyon görünür.
+      if (Date.now() - lastFetchRef.current < 30_000) return
       void loadProfil()
     }, []),
   )
@@ -783,8 +781,13 @@ export default function ProfilScreen() {
     return () => clearInterval(iv)
   }, [])
 
+  // DEĞİŞİKLİK 2+3: fetchAktifCagrilar ve fetchBildirimler TEK sorguda birleştirildi.
+  // Eski: 2 ayrı bildirimler sorgusu + 1 duplicate rezervasyonlar sorgusu = 3 round trip.
+  // Yeni: 1 bildirimler sorgusu, hem aktifCagrilar hem bildirimler state'ini doldurur = 1 round trip.
+  // Dep [profil, rezervasyonlar] → [profil?.id, rezervasyonlar.length]: gereksiz object eşitlik
+  // karşılaştırmasını önler; rezervasyonlar listesi dolunca (length değişince) yeniden çalışır.
   useEffect(() => {
-    if (!profil) return
+    if (!profil?.id) return
     const rezIds = rezervasyonlar.map((r) => String(r.id)).filter(Boolean)
     if (rezIds.length === 0) {
       setAktifCagrilar({})
@@ -792,22 +795,29 @@ export default function ProfilScreen() {
       return
     }
 
-    async function fetchAktifCagrilar() {
+    async function fetchCagriVeBildirimler() {
+      setBildirimlerLoading(true)
       const { data, error } = await supabase
         .from('bildirimler')
         .select('id, rezervasyon_id, created_at, yanit_tarihi, yanit_suresi_saniye, varis_tarihi, varis_suresi_saniye, okundu')
         .eq('tip', 'garson_cagri')
         .in('rezervasyon_id', rezIds)
         .order('created_at', { ascending: false })
+        .limit(50)
+      setBildirimlerLoading(false)
       if (error) {
-        console.error('fetchAktifCagrilar:', JSON.stringify(error))
+        console.error('fetchCagriVeBildirimler:', JSON.stringify(error))
         return
       }
+      const rows = data ?? []
+      // bildirimler state (tam liste, 50 kayıtla sınırlı)
+      setBildirimler(rows)
+      // aktifCagrilar state (yalnızca aktif garson çağrıları)
       const now = Date.now()
       const onDakika = 10 * 60 * 1000
       const birDakika = 60 * 1000
       const yeni: Record<string, AktifCagriDurum> = {}
-      for (const b of data ?? []) {
+      for (const b of rows) {
         const key = String(b.rezervasyon_id)
         if (yeni[key]) continue
         const createdMs = new Date(b.created_at).getTime()
@@ -829,49 +839,12 @@ export default function ProfilScreen() {
       setAktifCagrilar(yeni)
     }
 
-    async function fetchBildirimler() {
-      setBildirimlerLoading(true)
-      if (!profil?.id) {
-        setBildirimlerLoading(false)
-        setBildirimler([])
-        return
-      }
-      // Önce kullanıcının tüm rezervasyon id'lerini çek
-      const { data: tumRez, error: rezErr } = await supabase
-        .from('rezervasyonlar')
-        .select('id')
-        .eq('kullanici_id', profil.id)
-      if (rezErr) {
-        console.error('fetchBildirimler rez error:', JSON.stringify(rezErr))
-        setBildirimlerLoading(false)
-        return
-      }
-      const tumRezIds = (tumRez ?? []).map((r: any) => String(r.id))
-      if (tumRezIds.length === 0) {
-        setBildirimler([])
-        setBildirimlerLoading(false)
-        return
-      }
-      const { data, error } = await supabase
-        .from('bildirimler')
-        .select('id, rezervasyon_id, created_at, yanit_tarihi, yanit_suresi_saniye, varis_tarihi, varis_suresi_saniye, okundu')
-        .eq('tip', 'garson_cagri')
-        .in('rezervasyon_id', tumRezIds)
-        .order('created_at', { ascending: false })
-        .limit(50)
-      setBildirimlerLoading(false)
-      if (error) {
-        console.error('fetchBildirimler:', JSON.stringify(error))
-        return
-      }
-      setBildirimler(data ?? [])
-    }
-
-    fetchAktifCagrilarRef.current = fetchAktifCagrilar
-    fetchBildirimlerRef.current = fetchBildirimler
-    fetchAktifCagrilar()
-    fetchBildirimler()
-  }, [profil, rezervasyonlar])
+    // Her iki ref de birleşik fonksiyona işaret eder; realtime channel her ikisini çağırır,
+    // fetchBildirimlerRef no-op yapılarak çift sorgu engellenir.
+    fetchAktifCagrilarRef.current = fetchCagriVeBildirimler
+    fetchBildirimlerRef.current = () => { /* fetchCagriVeBildirimler zaten yukarıda çalıştı */ }
+    fetchCagriVeBildirimler()
+  }, [profil?.id, rezervasyonlar.length])
 
   // Cagri realtime channel — sadece profil.id değişince yeniden kurulur
   // Benzersiz suffix: supabase.channel() aynı isimde mevcut (subscribed) kanalı döndürür
@@ -897,49 +870,27 @@ export default function ProfilScreen() {
     }
   }, [profil?.id])
 
+  // DEĞİŞİKLİK 4: fetchSiparisler artık lazy — sadece Siparişlerim tab'ı aktifken çalışır.
+  // Eski: sayfa açılışında otomatik → rezervasyonlar.select('id') + 2 ayrı siparis sorgusu = 3 seri RT.
+  // Yeni: tab açılınca → state'ten rezIds (0 RT tasarrufu) + aktif+gecmis paralel = 2 RT (vs 3).
+  // rezervasyonlar.length bağımlılığı: tab zaten açıkken rezervasyonlar yüklenirse yeniden çalışır.
   useEffect(() => {
     if (!profil?.id) return
+    if (altSekme !== 'siparisler') return
+
+    const rezIds = rezervasyonlar.map((r) => String(r.id)).filter(Boolean)
+    if (rezIds.length === 0) {
+      setAktifSiparisler([])
+      setGecmisTumSiparisler([])
+      setAktifSiparislerLoading(false)
+      setGecmisTumLoading(false)
+      return
+    }
 
     async function fetchSiparisler() {
       setAktifSiparislerLoading(true)
       setGecmisTumLoading(true)
 
-      if (!profil?.id) {
-        setAktifSiparislerLoading(false)
-        setGecmisTumLoading(false)
-        setAktifSiparisler([])
-        setGecmisTumSiparisler([])
-        return
-      }
-
-      // Önce kullanicinin tum rezervasyon id'lerini al (siparisler rezervasyon_id uzerinden bagli)
-      const { data: rezData, error: rezErr } = await supabase
-        .from('rezervasyonlar')
-        .select('id')
-        .eq('kullanici_id', profil.id)
-
-      if (rezErr || !rezData || rezData.length === 0) {
-        setAktifSiparisler([])
-        setGecmisTumSiparisler([])
-        setAktifSiparislerLoading(false)
-        setGecmisTumLoading(false)
-        return
-      }
-
-      const rezIds = rezData.map((r: any) => String(r.id))
-
-      // Aktif siparişler
-      const { data: aktifData, error: aktifErr } = await supabase
-        .from('siparisler')
-        .select('id, durum, toplam, created_at, tesis_id, rezervasyon_id, siparis_kalemleri(ad, adet, fiyat), tesisler(ad)')
-        .in('rezervasyon_id', rezIds)
-        .in('durum', [SIPARIS_DURUM.YENI, SIPARIS_DURUM.HAZIRLANIYOR, SIPARIS_DURUM.HAZIR, SIPARIS_DURUM.YOLDA])
-        .order('created_at', { ascending: false })
-
-      if (!aktifErr) setAktifSiparisler(aktifData ?? [])
-      setAktifSiparislerLoading(false)
-
-      // Geçmiş siparişler
       const simdi = new Date()
       let baslangicTarihi: Date | null = null
       if (gecmisFilter === 'bugun') {
@@ -950,7 +901,7 @@ export default function ProfilScreen() {
         baslangicTarihi = new Date(simdi.getFullYear(), simdi.getMonth(), 1)
       }
 
-      let query = supabase
+      let gecmisQuery = supabase
         .from('siparisler')
         .select('id, durum, toplam, created_at, tesis_id, rezervasyon_id, siparis_kalemleri(ad, adet, fiyat), tesisler(ad)')
         .in('rezervasyon_id', rezIds)
@@ -959,17 +910,30 @@ export default function ProfilScreen() {
         .limit(50)
 
       if (baslangicTarihi) {
-        query = query.gte('created_at', baslangicTarihi.toISOString())
+        gecmisQuery = gecmisQuery.gte('created_at', baslangicTarihi.toISOString())
       }
 
-      const { data: gecmisData, error: gecmisErr } = await query
-      if (!gecmisErr) setGecmisTumSiparisler(gecmisData ?? [])
+      // Aktif + geçmiş siparişler paralel çekilir (2 seri RT → 1 paralel RT)
+      const [aktifResult, gecmisResult] = await Promise.all([
+        supabase
+          .from('siparisler')
+          .select('id, durum, toplam, created_at, tesis_id, rezervasyon_id, siparis_kalemleri(ad, adet, fiyat), tesisler(ad)')
+          .in('rezervasyon_id', rezIds)
+          .in('durum', [SIPARIS_DURUM.YENI, SIPARIS_DURUM.HAZIRLANIYOR, SIPARIS_DURUM.HAZIR, SIPARIS_DURUM.YOLDA])
+          .order('created_at', { ascending: false }),
+        gecmisQuery,
+      ])
+
+      if (!aktifResult.error) setAktifSiparisler(aktifResult.data ?? [])
+      setAktifSiparislerLoading(false)
+
+      if (!gecmisResult.error) setGecmisTumSiparisler(gecmisResult.data ?? [])
       setGecmisTumLoading(false)
     }
 
     fetchSiparislerRef.current = fetchSiparisler
     fetchSiparisler()
-  }, [profil?.id, gecmisFilter])
+  }, [profil?.id, gecmisFilter, altSekme, rezervasyonlar.length])
 
   // Siparis realtime channel — sadece profil.id değişince yeniden kurulur
   // Benzersiz suffix: supabase.channel() deduplication'ı önlemek için
@@ -997,6 +961,23 @@ export default function ProfilScreen() {
       void supabase.removeChannel(siparisChannel)
     }
   }, [profil?.id])
+
+  // DEĞİŞİKLİK 4 (yorumlar): sadece Yorumlarım tab'ı açıkken çekilir.
+  // Bir kez yüklendikten sonra tekrar çekilmez (length === 0 koşulu ile).
+  useEffect(() => {
+    if (!profil?.id) return
+    if (altSekme !== 'yorumlar') return
+    if (yorumlar.length > 0) return
+
+    void supabase
+      .from('yorumlar')
+      .select('id, yorum, puan, created_at, durum, tesisler(ad)')
+      .eq('kullanici_id', profil.id)
+      .order('created_at', { ascending: false })
+      .then(({ data }) => {
+        if (data) setYorumlar(data)
+      })
+  }, [profil?.id, altSekme, yorumlar.length])
 
   const avatarHarf = useMemo(() => {
     const t = (profil?.ad ?? '').trim()

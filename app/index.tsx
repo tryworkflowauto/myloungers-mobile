@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons'
+import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin'
 import { Link, useRouter } from 'expo-router'
-import { useState } from 'react'
-import { Alert, Image, ImageBackground, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import { useEffect, useState } from 'react'
+import { ActivityIndicator, Alert, Image, ImageBackground, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
 import { useAuthLocale } from '../lib/auth-locale-context'
 import { supabase } from '../lib/supabase'
 
@@ -26,6 +27,63 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('')
   const [loginErrVisible, setLoginErrVisible] = useState(false)
   const [loginErrMsg, setLoginErrMsg] = useState('')
+  const [googleLoading, setGoogleLoading] = useState(false)
+
+  useEffect(() => {
+    GoogleSignin.configure({
+      webClientId: '891007758452-eg3vit8jhh61h7tl0tappumb0a4a08tu.apps.googleusercontent.com',
+      iosClientId: '891007758452-of66us3pu4djridg5a4u06bduseaok86.apps.googleusercontent.com',
+      offlineAccess: true,
+      scopes: ['profile', 'email'],
+    })
+  }, [])
+
+  const handleGoogleLogin = async () => {
+    if (googleLoading) return
+    setGoogleLoading(true)
+    try {
+      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true })
+      const userInfo = await GoogleSignin.signIn()
+      const idToken = (userInfo as any).idToken ?? (userInfo as any).data?.idToken
+      if (!idToken) throw new Error('Google ID token alınamadı')
+
+      const { data, error } = await supabase.auth.signInWithIdToken({
+        provider: 'google',
+        token: idToken,
+      })
+      if (error) throw error
+
+      // kullanicilar tablosunda kayıt yoksa oluştur
+      const { data: existing } = await supabase
+        .from('kullanicilar')
+        .select('id')
+        .eq('id', data.user.id)
+        .maybeSingle()
+
+      if (!existing) {
+        const fullName = (data.user.user_metadata?.full_name as string | undefined) ?? ''
+        const parts = fullName.trim().split(' ')
+        const ad = parts[0] || data.user.email?.split('@')[0] || 'Kullanıcı'
+        const soyad = parts.slice(1).join(' ')
+        await supabase.from('kullanicilar').insert({
+          id: data.user.id,
+          ad,
+          soyad,
+          email: data.user.email,
+          rol: 'musteri',
+        })
+      }
+
+      router.replace('/(tabs)')
+    } catch (e: unknown) {
+      const err = e as { code?: string; message?: string }
+      if (err.code === statusCodes.SIGN_IN_CANCELLED) return
+      if (err.code === statusCodes.IN_PROGRESS) return
+      Alert.alert('Hata', err.message || 'Google ile giriş başarısız')
+    } finally {
+      setGoogleLoading(false)
+    }
+  }
 
   const handleLogin = async () => {
     const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
@@ -67,8 +125,17 @@ export default function LoginScreen() {
               <Text style={styles.registerBtnText}>{t.login.createAccount}</Text>
             </Link>
           </View>
-          <TouchableOpacity style={styles.googleBtn}>
-            <Image source={{ uri: 'https://www.google.com/favicon.ico' }} style={{ width: 18, height: 18, marginRight: 8 }} />
+          <TouchableOpacity
+            style={[styles.googleBtn, googleLoading && { opacity: 0.7 }]}
+            activeOpacity={0.85}
+            disabled={googleLoading}
+            onPress={() => void handleGoogleLogin()}
+          >
+            {googleLoading ? (
+              <ActivityIndicator size="small" color="#4285F4" style={{ marginRight: 8 }} />
+            ) : (
+              <Image source={{ uri: 'https://www.google.com/favicon.ico' }} style={{ width: 18, height: 18, marginRight: 8 }} />
+            )}
             <Text style={styles.googleBtnText}>{t.login.googleSignIn}</Text>
           </TouchableOpacity>
         </View>
