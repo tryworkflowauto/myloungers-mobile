@@ -1,4 +1,3 @@
-import { useTranslation } from 'react-i18next'
 import { Ionicons } from '@expo/vector-icons'
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin'
 import * as AppleAuthentication from 'expo-apple-authentication'
@@ -6,30 +5,29 @@ import * as Crypto from 'expo-crypto'
 import { Link, useRouter } from 'expo-router'
 import { useEffect, useState } from 'react'
 import { ActivityIndicator, Alert, Image, ImageBackground, Modal, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
-import { useAuthLocale } from '../lib/auth-locale-context'
+import { useTranslation } from 'react-i18next'
+import { changeLanguage } from '../lib/i18n'
 import { supabase } from '../lib/supabase'
 
-function mapLoginError(rawMsg: string, tLogin: { loginErrInvalidCredentials: string; loginErrEmailNotConfirmed: string; loginErrUserNotFound: string; loginErrDefault: string }): string {
+function mapLoginError(rawMsg: string, tFn: (key: string) => string): string {
   const lower = rawMsg.toLowerCase()
   if (lower.includes('invalid login credentials') || lower.includes('invalid email or password') || lower.includes('wrong password')) {
-    return tLogin.loginErrInvalidCredentials
+    return tFn('login.loginErrInvalidCredentials')
   }
   if (lower.includes('email not confirmed') || lower.includes('email address not confirmed')) {
-    return tLogin.loginErrEmailNotConfirmed
+    return tFn('login.loginErrEmailNotConfirmed')
   }
   if (lower.includes('user not found') || lower.includes('no user found')) {
-    return tLogin.loginErrUserNotFound
+    return tFn('login.loginErrUserNotFound')
   }
-  return tLogin.loginErrDefault
+  return tFn('login.loginErrDefault')
 }
 
 export default function LoginScreen() {
   const router = useRouter()
-  const { lang, setLang, t } = useAuthLocale()
-
-  // i18n test — sadece doğrulama için, üretimde kaldırılacak
-  const { t: ti18n } = useTranslation()
-  console.log('[i18n test] auth.login =>', ti18n('auth.login'))
+  const { t, i18n } = useTranslation()
+  const isTr = i18n.language.startsWith('tr')
+  const isEn = i18n.language.startsWith('en')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loginErrVisible, setLoginErrVisible] = useState(false)
@@ -106,7 +104,7 @@ export default function LoginScreen() {
       const err = e as { code?: string; message?: string }
       // ERR_REQUEST_CANCELED: kullanıcı iptal etti
       if (err.code === 'ERR_REQUEST_CANCELED') return
-      Alert.alert('Hata', err.message || 'Apple ile giriş başarısız')
+      Alert.alert(t('common.errorTitle'), err.message || t('login.appleLoginFailed'))
     } finally {
       setAppleLoading(false)
     }
@@ -154,7 +152,7 @@ export default function LoginScreen() {
       const err = e as { code?: string; message?: string }
       if (err.code === statusCodes.SIGN_IN_CANCELLED) return
       if (err.code === statusCodes.IN_PROGRESS) return
-      Alert.alert('Hata', err.message || 'Google ile giriş başarısız')
+      Alert.alert(t('common.errorTitle'), err.message || t('login.googleLoginFailed'))
     } finally {
       setGoogleLoading(false)
     }
@@ -163,7 +161,7 @@ export default function LoginScreen() {
   const handleLogin = async () => {
     const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
     if (error) {
-      setLoginErrMsg(mapLoginError(error.message, t.login))
+      setLoginErrMsg(mapLoginError(error.message, t))
       setLoginErrVisible(true)
       return
     }
@@ -176,28 +174,28 @@ export default function LoginScreen() {
         <View style={styles.card}>
           <Image source={require('../assets/images/logo.png')} style={styles.logo} resizeMode="contain" />
           <View style={{ flexDirection: 'row', justifyContent: 'center', marginBottom: 8, gap: 12 }}>
-            <TouchableOpacity onPress={() => setLang('tr')}>
-              <Text style={{ fontSize: 12, color: lang === 'tr' ? '#3333cc' : '#aaaaaa', fontWeight: lang === 'tr' ? '700' : '600' }}>{t.login.langTr}</Text>
+            <TouchableOpacity onPress={() => { void changeLanguage('tr') }}>
+              <Text style={{ fontSize: 12, color: isTr ? '#3333cc' : '#aaaaaa', fontWeight: isTr ? '700' : '600' }}>{t('login.langTr')}</Text>
             </TouchableOpacity>
             <Text style={{ fontSize: 12, color: '#aaaaaa' }}>|</Text>
-            <TouchableOpacity onPress={() => setLang('en')}>
-              <Text style={{ fontSize: 12, color: lang === 'en' ? '#3333cc' : '#aaaaaa', fontWeight: lang === 'en' ? '700' : '600' }}>{t.login.langEn}</Text>
+            <TouchableOpacity onPress={() => { void changeLanguage('en') }}>
+              <Text style={{ fontSize: 12, color: isEn ? '#3333cc' : '#aaaaaa', fontWeight: isEn ? '700' : '600' }}>{t('login.langEn')}</Text>
             </TouchableOpacity>
           </View>
           <View style={styles.inputRow}>
             <Ionicons name="person-circle-outline" size={22} color="#3333cc" />
-            <TextInput placeholder={t.login.placeholderEmail} value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" style={styles.input} />
+            <TextInput placeholder={t('login.placeholderEmail')} value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" style={styles.input} />
           </View>
           <View style={styles.inputRow}>
             <Ionicons name="lock-closed-outline" size={22} color="#3333cc" />
-            <TextInput placeholder={t.login.placeholderPassword} value={password} onChangeText={setPassword} secureTextEntry style={styles.input} />
+            <TextInput placeholder={t('login.placeholderPassword')} value={password} onChangeText={setPassword} secureTextEntry style={styles.input} />
           </View>
           <View style={styles.buttonRow}>
             <TouchableOpacity onPress={handleLogin} style={styles.loginBtn}>
-              <Text style={styles.loginBtnText}>{t.login.login}</Text>
+              <Text style={styles.loginBtnText}>{t('login.login')}</Text>
             </TouchableOpacity>
             <Link href="/register" style={styles.registerBtn}>
-              <Text style={styles.registerBtnText}>{t.login.createAccount}</Text>
+              <Text style={styles.registerBtnText}>{t('login.createAccount')}</Text>
             </Link>
           </View>
 
@@ -214,7 +212,7 @@ export default function LoginScreen() {
               ) : (
                 <Ionicons name="logo-apple" size={18} color="#000000" style={{ marginRight: 8 }} />
               )}
-              <Text style={styles.googleBtnText}>Apple ile Giriş</Text>
+              <Text style={styles.googleBtnText}>{t('login.appleSignIn')}</Text>
             </TouchableOpacity>
           ) : (
             <TouchableOpacity
@@ -228,13 +226,13 @@ export default function LoginScreen() {
               ) : (
                 <Image source={{ uri: 'https://www.google.com/favicon.ico' }} style={{ width: 18, height: 18, marginRight: 8 }} />
               )}
-              <Text style={styles.googleBtnText}>{t.login.googleSignIn}</Text>
+              <Text style={styles.googleBtnText}>{t('login.googleSignIn')}</Text>
             </TouchableOpacity>
           )}
         </View>
         <View style={styles.forgotWrapper}>
           <Link href="/forgot-password" style={styles.forgotBtn}>
-            <Text style={styles.forgotBtnText}>{t.login.forgotPassword}</Text>
+              <Text style={styles.forgotBtnText}>{t('login.forgotPassword')}</Text>
           </Link>
         </View>
       </View>
@@ -244,14 +242,14 @@ export default function LoginScreen() {
         <View style={styles.errBackdrop}>
           <View style={styles.errCard}>
             <Text style={styles.errIcon}>🔒</Text>
-            <Text style={styles.errTitle}>{t.login.loginErrTitle}</Text>
+            <Text style={styles.errTitle}>{t('login.loginErrTitle')}</Text>
             <Text style={styles.errMsg}>{loginErrMsg}</Text>
             <TouchableOpacity
               style={styles.errBtn}
               activeOpacity={0.85}
               onPress={() => setLoginErrVisible(false)}
             >
-              <Text style={styles.errBtnText}>{t.login.loginErrOk}</Text>
+              <Text style={styles.errBtnText}>{t('login.loginErrOk')}</Text>
             </TouchableOpacity>
           </View>
         </View>

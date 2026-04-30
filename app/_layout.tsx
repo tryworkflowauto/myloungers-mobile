@@ -1,4 +1,3 @@
-import { AuthLocaleProvider } from '../lib/auth-locale-context'
 import { useEffect, useState } from 'react'
 import { router } from 'expo-router'
 import { Stack } from 'expo-router'
@@ -76,7 +75,7 @@ export default function RootLayout() {
   }, [])
 
   return (
-    <AuthLocaleProvider>
+    <>
       {/* Stack yalnızca splash tamamen bitip i18n yüklendikten sonra mount edilir */}
       {!splashMounted && i18nReady && (
         <Stack screenOptions={{ headerShown: false }}>
@@ -94,6 +93,6 @@ export default function RootLayout() {
           onAnimationEnd={() => setSplashMounted(false)}
         />
       )}
-    </AuthLocaleProvider>
+    </>
   )
 }

@@ -18,7 +18,7 @@ import {
   View,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { useAuthLocale } from '../../lib/auth-locale-context'
+import { useTranslation } from 'react-i18next'
 import { supabase } from '../../lib/supabase'
 
 export type TesisRow = {
@@ -171,17 +171,18 @@ function matchesFacilityType(ad: string, typeKey: string | null): boolean {
   return /aqua|water|park|aquapark/i.test(ad)
 }
 
-function typeBadgesForAd(ad: string, t: { home: { facilityTypeHotel: string; facilityTypeBeachClub: string; facilityTypeAquaPark: string } }): string[] {
+function typeBadgesForAd(ad: string, t: (key: string) => string): string[] {
   const badges: string[] = []
-  if (/hotel|otel|resort|suites/i.test(ad)) badges.push(t.home.facilityTypeHotel)
-  if (/beach|plaj|club|sahil|kumsal/i.test(ad)) badges.push(t.home.facilityTypeBeachClub)
-  if (/aqua|water|park|aquapark/i.test(ad)) badges.push(t.home.facilityTypeAquaPark)
+  if (/hotel|otel|resort|suites/i.test(ad)) badges.push(t('home.facilityTypeHotel'))
+  if (/beach|plaj|club|sahil|kumsal/i.test(ad)) badges.push(t('home.facilityTypeBeachClub'))
+  if (/aqua|water|park|aquapark/i.test(ad)) badges.push(t('home.facilityTypeAquaPark'))
   return badges.slice(0, 4)
 }
 
 export default function SearchScreen() {
   const router = useRouter()
-  const { lang, t } = useAuthLocale()
+  const { t, i18n } = useTranslation()
+  const isTr = i18n.language.startsWith('tr')
   const params = useLocalSearchParams<{ region?: string; facilityTypeKey?: string; date?: string; facilityName?: string }>()
 
   const [region, setRegion] = useState(() => paramString(params.region))
@@ -228,7 +229,7 @@ export default function SearchScreen() {
   const [minFiyat, setMinFiyat] = useState<number>(0)
   const [maxFiyat, setMaxFiyat] = useState<number>(5000)
 
-  const locale = lang === 'tr' ? 'tr-TR' : 'en-US'
+  const locale = isTr ? 'tr-TR' : 'en-US'
   const formatDate = useCallback(
     (d: Date) => d.toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' }),
     [locale],
@@ -236,16 +237,16 @@ export default function SearchScreen() {
 
   const typeOptions = useMemo(
     () => [
-      { key: 'hotel', label: t.home.facilityTypeHotel },
-      { key: 'beach', label: t.home.facilityTypeBeachClub },
-      { key: 'aqua', label: t.home.facilityTypeAquaPark },
+      { key: 'hotel', label: t('home.facilityTypeHotel') },
+      { key: 'beach', label: t('home.facilityTypeBeachClub') },
+      { key: 'aqua', label: t('home.facilityTypeAquaPark') },
     ],
     [t],
   )
 
   const selectedTypeLabel = facilityTypeKey
-    ? typeOptions.find((o) => o.key === facilityTypeKey)?.label ?? t.home.facilityTypePlaceholder
-    : t.home.facilityTypePlaceholder
+    ? typeOptions.find((o) => o.key === facilityTypeKey)?.label ?? t('home.facilityTypePlaceholder')
+    : t('home.facilityTypePlaceholder')
 
   const runSearch = useCallback(async () => {
     setLoading(true)
@@ -416,7 +417,7 @@ export default function SearchScreen() {
     return rows
   }, [calendarViewMonth])
 
-  const weekdayLabels = lang === 'tr' ? WEEKDAY_LABELS_TR : WEEKDAY_LABELS_EN
+  const weekdayLabels = isTr ? WEEKDAY_LABELS_TR : WEEKDAY_LABELS_EN
   const monthYearLabel = calendarViewMonth.toLocaleDateString(locale, { month: 'long', year: 'numeric' })
 
   const filteredResults = useMemo(() => {
@@ -493,10 +494,10 @@ export default function SearchScreen() {
   }
 
   const tabItems: { key: 'all' | 'hotel' | 'beach' | 'aqua'; label: string }[] = [
-    { key: 'all', label: lang === 'tr' ? 'Tümü' : 'All' },
-    { key: 'beach', label: t.home.facilityTypeBeachClub },
-    { key: 'hotel', label: t.home.facilityTypeHotel },
-    { key: 'aqua', label: t.home.facilityTypeAquaPark },
+    { key: 'all', label: t('search.tabAll') },
+    { key: 'beach', label: t('home.facilityTypeBeachClub') },
+    { key: 'hotel', label: t('home.facilityTypeHotel') },
+    { key: 'aqua', label: t('home.facilityTypeAquaPark') },
   ]
 
   const tabCounts = useMemo(() => {
@@ -517,13 +518,13 @@ export default function SearchScreen() {
 
   const kisiModalOptions = useMemo(
     () => [
-      { value: 1, label: lang === 'tr' ? '1 Kişi' : '1 Guest' },
-      { value: 2, label: lang === 'tr' ? '2 Kişi' : '2 Guests' },
-      { value: 3, label: lang === 'tr' ? '3 Kişi' : '3 Guests' },
-      { value: 4, label: lang === 'tr' ? '4 Kişi' : '4 Guests' },
-      { value: 5, label: lang === 'tr' ? '5+ Kişi' : '5+ Guests' },
+      { value: 1, label: t('search.guests1') },
+      { value: 2, label: t('search.guests2') },
+      { value: 3, label: t('search.guests3') },
+      { value: 4, label: t('search.guests4') },
+      { value: 5, label: t('search.guests5Plus') },
     ],
-    [lang],
+    [t],
   )
 
   return (
@@ -598,10 +599,10 @@ export default function SearchScreen() {
             ))}
             <View style={styles.calendarFooterRow}>
               <TouchableOpacity style={styles.calendarBtnCancel} onPress={() => setShowDatePicker(false)} activeOpacity={0.85}>
-                <Text style={styles.calendarBtnCancelText}>İPTAL</Text>
+                <Text style={styles.calendarBtnCancelText}>{t('home.calendarCancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.calendarBtnOk} onPress={onCalendarConfirm} activeOpacity={0.85}>
-                <Text style={styles.calendarBtnOkText}>TAMAM</Text>
+                <Text style={styles.calendarBtnOkText}>{t('home.calendarOk')}</Text>
               </TouchableOpacity>
             </View>
           </SafeAreaView>
@@ -611,7 +612,7 @@ export default function SearchScreen() {
       <Modal visible={showTypeModal} transparent animationType="fade">
         <Pressable style={styles.modalBackdrop} onPress={() => setShowTypeModal(false)}>
           <Pressable style={styles.typeSheet} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.typeSheetTitle}>{t.home.selectFacilityType}</Text>
+            <Text style={styles.typeSheetTitle}>{t('home.selectFacilityType')}</Text>
             {typeOptions.map((o) => (
               <TouchableOpacity
                 key={o.key}
@@ -651,7 +652,7 @@ export default function SearchScreen() {
         <View style={styles.regionModalRoot}>
           <SafeAreaView style={styles.regionModalSafe} edges={['top']}>
             <View style={styles.regionModalHeader}>
-              <Text style={[styles.regionModalTitle, { flex: 1 }]}>{lang === 'tr' ? 'Kişi Sayısı' : 'Number of guests'}</Text>
+              <Text style={[styles.regionModalTitle, { flex: 1 }]}>{t('search.guestCountTitle')}</Text>
               <TouchableOpacity onPress={() => setShowKisiModal(false)} hitSlop={12} accessibilityRole="button">
                 <Ionicons name="close" size={24} color="#0A1628" />
               </TouchableOpacity>
@@ -686,7 +687,7 @@ export default function SearchScreen() {
         <View style={styles.regionModalRoot}>
           <SafeAreaView style={styles.regionModalSafe} edges={['top', 'bottom']}>
             <View style={styles.regionModalHeader}>
-              <Text style={[styles.regionModalTitle, { flex: 1 }]}>Filtrele</Text>
+              <Text style={[styles.regionModalTitle, { flex: 1 }]}>{t('home.filter')}</Text>
               <TouchableOpacity onPress={() => setShowFilterModal(false)} hitSlop={12} accessibilityRole="button">
                 <Ionicons name="close" size={24} color="#0A1628" />
               </TouchableOpacity>
@@ -696,14 +697,14 @@ export default function SearchScreen() {
               showsVerticalScrollIndicator={false}
               contentContainerStyle={styles.filterModalScrollContent}
             >
-              <Text style={styles.filterSectionLabel}>SIRALAMA</Text>
+              <Text style={styles.filterSectionLabel}>{t('home.sortingLabel')}</Text>
               <View style={styles.filterSortGrid}>
                 {(
                   [
-                    { key: 'populer' as const, label: '⭐ Popüler' },
-                    { key: 'ucuzdan' as const, label: '💰 Ucuzdan Pahalıya' },
-                    { key: 'pahalidan' as const, label: '💎 Pahalıdan Ucuza' },
-                    { key: 'puan' as const, label: '🏆 En Yüksek Puan' },
+                    { key: 'populer' as const, labelKey: 'home.sortPopular' },
+                    { key: 'ucuzdan' as const, labelKey: 'home.sortCheapest' },
+                    { key: 'pahalidan' as const, labelKey: 'home.sortExpensive' },
+                    { key: 'puan' as const, labelKey: 'home.sortHighestRating' },
                   ] as const
                 ).map((opt) => {
                   const active = siralama === opt.key
@@ -715,7 +716,7 @@ export default function SearchScreen() {
                         activeOpacity={0.85}
                       >
                         <Text style={[styles.filterSortBtnText, active && styles.filterSortBtnTextActive]} numberOfLines={2}>
-                          {opt.label}
+                          {t(opt.labelKey)}
                         </Text>
                       </TouchableOpacity>
                     </View>
@@ -723,17 +724,18 @@ export default function SearchScreen() {
                 })}
               </View>
 
-              <Text style={styles.filterSectionLabel}>MİNİMUM PUAN</Text>
+              <Text style={styles.filterSectionLabel}>{t('home.minRatingLabel')}</Text>
               <View style={styles.filterPuanRow}>
                 {(
                   [
-                    { value: null as number | null, label: 'Tümü' },
-                    { value: 3 as number | null, label: '3★+' },
-                    { value: 4 as number | null, label: '4★+' },
-                    { value: 4.5 as number | null, label: '4.5★+' },
+                    { value: null as number | null, labelKey: 'home.allRatings' as const },
+                    { value: 3 as number | null, rawLabel: '3★+' as const },
+                    { value: 4 as number | null, rawLabel: '4★+' as const },
+                    { value: 4.5 as number | null, rawLabel: '4.5★+' as const },
                   ] as const
                 ).map((opt) => {
                   const active = minPuan === opt.value
+                  const label = 'labelKey' in opt ? t(opt.labelKey) : opt.rawLabel
                   return (
                     <TouchableOpacity
                       key={String(opt.value)}
@@ -741,13 +743,13 @@ export default function SearchScreen() {
                       onPress={() => setMinPuan(opt.value)}
                       activeOpacity={0.85}
                     >
-                      <Text style={[styles.filterPuanPillText, active && styles.filterPuanPillTextActive]}>{opt.label}</Text>
+                      <Text style={[styles.filterPuanPillText, active && styles.filterPuanPillTextActive]}>{label}</Text>
                     </TouchableOpacity>
                   )
                 })}
               </View>
 
-              <Text style={styles.filterSectionLabel}>ÖZELLİKLER</Text>
+              <Text style={styles.filterSectionLabel}>{t('home.featuresLabel')}</Text>
               <View style={styles.filterImkanWrap}>
                 {tumImkanlar.map((im) => {
                   const active = secilenImkanlar.includes(im)
@@ -782,14 +784,14 @@ export default function SearchScreen() {
                 }}
                 activeOpacity={0.85}
               >
-                <Text style={styles.filterClearBtnText}>Temizle</Text>
+                <Text style={styles.filterClearBtnText}>{t('home.clearFilters')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.filterApplyBtn}
                 onPress={() => setShowFilterModal(false)}
                 activeOpacity={0.85}
               >
-                <Text style={styles.filterApplyBtnText}>Sonuçları Gör</Text>
+                <Text style={styles.filterApplyBtnText}>{t('home.seeResults')}</Text>
               </TouchableOpacity>
             </View>
           </SafeAreaView>
@@ -800,7 +802,7 @@ export default function SearchScreen() {
         <TouchableOpacity onPress={() => router.back()} hitSlop={12} accessibilityRole="button">
           <Ionicons name="arrow-back" size={24} color="#ffffff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{lang === 'tr' ? 'Tesis Ara' : 'Search facilities'}</Text>
+        <Text style={styles.headerTitle}>{t('search.screenTitle')}</Text>
         <View style={{ width: 24 }} />
       </View>
 
@@ -817,13 +819,13 @@ export default function SearchScreen() {
         <View style={styles.fieldRow}>
           <Ionicons name="map-outline" size={20} color="#0A1628" />
           <Text style={styles.locText} numberOfLines={2}>
-            {region || (lang === 'tr' ? 'Konum seçin' : 'Select location')}
+            {region || t('search.selectLocation')}
           </Text>
           <TouchableOpacity style={styles.gpsBtn} onPress={onUseGps} disabled={gpsLoading} activeOpacity={0.85}>
             {gpsLoading ? (
               <ActivityIndicator size="small" color="#0ABAB5" />
             ) : (
-              <Text style={styles.gpsBtnText}>+ GPS</Text>
+              <Text style={styles.gpsBtnText}>{t('search.gpsButton')}</Text>
             )}
           </TouchableOpacity>
         </View>
@@ -831,9 +833,7 @@ export default function SearchScreen() {
         {gpsKonum ? (
           <View style={styles.mesafeSliderBlock}>
             <Text style={styles.mesafeSliderLabel}>
-              {lang === 'tr'
-                ? `Çevremdeki tesisler — yarıçap: ${mesafe} km`
-                : `Facilities nearby — radius: ${mesafe} km`}
+              {t('search.radiusNearby', { distance: mesafe })}
             </Text>
             <Slider
               minimumValue={1}
@@ -848,7 +848,7 @@ export default function SearchScreen() {
           </View>
         ) : null}
 
-        <Text style={styles.fieldLabel}>{lang === 'tr' ? 'TESİS TİPİ' : 'FACILITY TYPE'}</Text>
+        <Text style={styles.fieldLabel}>{t('home.facilityTypeLabel')}</Text>
         <TouchableOpacity style={styles.fieldRow} onPress={() => setShowTypeModal(true)} activeOpacity={0.85}>
           <Ionicons name="business-outline" size={18} color="#0A1628" />
           <Text style={[styles.fieldInput, styles.fieldFakeInput]} numberOfLines={1}>
@@ -857,13 +857,13 @@ export default function SearchScreen() {
           <Ionicons name="chevron-down" size={18} color="#0A1628" />
         </TouchableOpacity>
 
-        <Text style={styles.fieldLabel}>{lang === 'tr' ? 'TARİH' : 'DATE'}</Text>
+        <Text style={styles.fieldLabel}>{t('home.dateLabel')}</Text>
         <TouchableOpacity style={styles.fieldRow} onPress={openDatePickerModal} activeOpacity={0.85}>
           <Ionicons name="calendar-outline" size={18} color="#0A1628" />
           <Text style={[styles.fieldInput, styles.fieldFakeInput]}>{formatDate(date)}</Text>
         </TouchableOpacity>
 
-        <Text style={styles.fieldLabel}>{lang === 'tr' ? 'KİŞİ' : 'GUESTS'}</Text>
+        <Text style={styles.fieldLabel}>{t('search.guestsLabel')}</Text>
         <TouchableOpacity style={styles.fieldRow} onPress={() => setShowKisiModal(true)} activeOpacity={0.85}>
           <Ionicons name="people-outline" size={18} color="#0A1628" />
           <Text
@@ -872,24 +872,18 @@ export default function SearchScreen() {
           >
             {kisiSayisi != null
               ? kisiSayisi === 5
-                ? lang === 'tr'
-                  ? '5+ Kişi'
-                  : '5+ Guests'
-                : lang === 'tr'
-                  ? `${kisiSayisi} Kişi`
-                  : `${kisiSayisi} Guests`
-              : lang === 'tr'
-                ? 'Kişi sayısı'
-                : 'Guest count'}
+                ? t('search.guests5Plus')
+                : t('search.guestsCount', { count: kisiSayisi })
+              : t('search.guestCountPlaceholder')}
           </Text>
           <Ionicons name="chevron-down" size={18} color="#0A1628" />
         </TouchableOpacity>
 
-        <Text style={styles.fieldLabel}>{lang === 'tr' ? 'TESİS ADI' : 'FACILITY NAME'}</Text>
+        <Text style={styles.fieldLabel}>{t('home.facilityNameLabel')}</Text>
         <View style={styles.fieldRow}>
           <Ionicons name="search-outline" size={18} color="#0A1628" />
           <TextInput
-            placeholder={t.home.facilityNamePlaceholder}
+            placeholder={t('home.facilityNamePlaceholder')}
             value={facilityName}
             onChangeText={setFacilityName}
             style={styles.fieldInput}
@@ -914,17 +908,17 @@ export default function SearchScreen() {
                 ))}
               </ScrollView>
             ) : (
-              <Text style={styles.facilityNameDropdownEmpty}>Tesis bulunamadı</Text>
+              <Text style={styles.facilityNameDropdownEmpty}>{t('search.facilityNotFound')}</Text>
             )}
           </View>
         ) : null}
 
         <TouchableOpacity style={styles.searchOrangeBtn} onPress={() => void runSearch()} activeOpacity={0.9} disabled={loading}>
-          <Text style={styles.searchOrangeBtnText}>{lang === 'tr' ? 'Ara' : 'Search'}</Text>
+          <Text style={styles.searchOrangeBtnText}>{t('common.search')}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.filterOpenBtn} onPress={() => setShowFilterModal(true)} activeOpacity={0.85}>
-          <Text style={styles.filterOpenBtnText}>Filtrele</Text>
+          <Text style={styles.filterOpenBtnText}>{t('home.filter')}</Text>
         </TouchableOpacity>
 
         <View style={styles.tabsRow}>
@@ -942,7 +936,7 @@ export default function SearchScreen() {
         </View>
 
         <Text style={styles.resultCount}>
-          {lang === 'tr' ? `${filteredResults.length} tesis listeleniyor` : `${filteredResults.length} facilities listed`}
+          {t('search.resultCount', { count: filteredResults.length })}
         </Text>
 
         {loading ? (
@@ -997,7 +991,7 @@ export default function SearchScreen() {
                       </View>
                     ) : null}
                     <TouchableOpacity style={styles.loungerBtn} activeOpacity={0.9} onPress={() => router.push(`/tesis/${encodeURIComponent(item.slug)}`)}>
-                      <Text style={styles.loungerBtnText}>{lang === 'tr' ? 'Şezlong Seç →' : 'Select lounger →'}</Text>
+                      <Text style={styles.loungerBtnText}>{t('search.selectLounger')}</Text>
                     </TouchableOpacity>
                   </View>
                 </Pressable>

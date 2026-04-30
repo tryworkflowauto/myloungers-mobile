@@ -21,7 +21,8 @@ import {
   View,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { useAuthLocale } from '../../lib/auth-locale-context'
+import { useTranslation } from 'react-i18next'
+import { changeLanguage } from '../../lib/i18n'
 import { supabase } from '../../lib/supabase'
 
 type TesisRow = {
@@ -141,7 +142,8 @@ function firstTesisByTypeKeyword(rows: TesisRow[], type: 'hotel' | 'beach' | 'aq
   })
 }
 
-function ReviewsSection({ lang }: { lang: string }) {
+function ReviewsSection() {
+  const { t } = useTranslation()
   const [reviews, setReviews] = React.useState<
     { id: string; yorum: string; puan: number; musteri_adi: string; tesis_id: string; tesisler: { ad: string } | null }[]
   >([])
@@ -173,7 +175,7 @@ function ReviewsSection({ lang }: { lang: string }) {
   return (
     <View style={{ marginTop: 32, paddingHorizontal: 16, marginBottom: 8 }}>
       <Text style={{ fontSize: 20, fontWeight: '800', color: '#0A1628', marginBottom: 16 }}>
-        {lang === 'tr' ? 'Kullanıcılar Ne Diyor?' : 'What Users Say'}
+        {t('home.usersWhatSay')}
       </Text>
       {reviews.map((r) => (
         <View key={r.id} style={{ backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 12, shadowColor: '#0A1628', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 }}>
@@ -186,7 +188,7 @@ function ReviewsSection({ lang }: { lang: string }) {
             ))}
           </View>
           <Text style={{ fontSize: 14, color: '#334155', lineHeight: 20, marginBottom: 8 }}>{r.yorum}</Text>
-          <Text style={{ fontSize: 12, color: '#94a3b8', fontWeight: '600' }}>{r.musteri_adi ?? (lang === 'tr' ? 'Misafir' : 'Guest')}</Text>
+          <Text style={{ fontSize: 12, color: '#94a3b8', fontWeight: '600' }}>{r.musteri_adi ?? t('home.guest')}</Text>
         </View>
       ))}
     </View>
@@ -195,7 +197,9 @@ function ReviewsSection({ lang }: { lang: string }) {
 
 export default function HomeScreen() {
   const router = useRouter()
-  const { lang, setLang, t } = useAuthLocale()
+  const { t, i18n } = useTranslation()
+  const isTr = i18n.language.startsWith('tr')
+  const isEn = i18n.language.startsWith('en')
   const [rows, setRows] = useState<TesisRow[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -241,7 +245,7 @@ export default function HomeScreen() {
   const skipFacilityDropdownSearchRef = useRef(false)
   const [bannerActiveIndex, setBannerActiveIndex] = useState(0)
 
-  const locale = lang === 'tr' ? 'tr-TR' : 'en-US'
+  const locale = isTr ? 'tr-TR' : 'en-US'
   const formatDate = useCallback(
     (d: Date) => d.toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' }),
     [locale],
@@ -249,16 +253,16 @@ export default function HomeScreen() {
 
   const typeOptions = useMemo(
     () => [
-      { key: 'hotel', label: t.home.facilityTypeHotel },
-      { key: 'beach', label: t.home.facilityTypeBeachClub },
-      { key: 'aqua', label: t.home.facilityTypeAquaPark },
+      { key: 'hotel', label: t('home.facilityTypeHotel') },
+      { key: 'beach', label: t('home.facilityTypeBeachClub') },
+      { key: 'aqua', label: t('home.facilityTypeAquaPark') },
     ],
     [t],
   )
 
   const selectedTypeLabel = facilityTypeKey
-    ? typeOptions.find((o) => o.key === facilityTypeKey)?.label ?? t.home.facilityTypePlaceholder
-    : t.home.facilityTypePlaceholder
+    ? typeOptions.find((o) => o.key === facilityTypeKey)?.label ?? t('home.facilityTypePlaceholder')
+    : t('home.facilityTypePlaceholder')
 
   useEffect(() => {
     let cancelled = false
@@ -343,9 +347,9 @@ export default function HomeScreen() {
 
   const categoryRows = useMemo(() => {
     return [
-      { key: 'hotel' as const, label: t.home.facilityTypeHotel, row: firstTesisByTypeKeyword(rows, 'hotel') },
-      { key: 'beach' as const, label: t.home.facilityTypeBeachClub, row: firstTesisByTypeKeyword(rows, 'beach') },
-      { key: 'aqua' as const, label: t.home.facilityTypeAquaPark, row: firstTesisByTypeKeyword(rows, 'aqua') },
+      { key: 'hotel' as const, label: t('home.facilityTypeHotel'), row: firstTesisByTypeKeyword(rows, 'hotel') },
+      { key: 'beach' as const, label: t('home.facilityTypeBeachClub'), row: firstTesisByTypeKeyword(rows, 'beach') },
+      { key: 'aqua' as const, label: t('home.facilityTypeAquaPark'), row: firstTesisByTypeKeyword(rows, 'aqua') },
     ]
   }, [rows, t])
 
@@ -456,7 +460,7 @@ export default function HomeScreen() {
       setFacilityDropdownResults([])
       return
     }
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       void (async () => {
         const { data, error } = await supabase
           .from('tesisler')
@@ -470,7 +474,7 @@ export default function HomeScreen() {
         setFacilityDropdownResults(((data ?? []) as unknown) as TesisRow[])
       })()
     }, 400)
-    return () => clearTimeout(t)
+    return () => clearTimeout(timer)
   }, [facilityName])
 
   const onSearchFacilities = () => {
@@ -643,7 +647,7 @@ export default function HomeScreen() {
     return rows
   }, [calendarViewMonth])
 
-  const weekdayLabels = lang === 'tr' ? WEEKDAY_LABELS_TR : WEEKDAY_LABELS_EN
+  const weekdayLabels = isTr ? WEEKDAY_LABELS_TR : WEEKDAY_LABELS_EN
   const monthYearLabel = calendarViewMonth.toLocaleDateString(locale, { month: 'long', year: 'numeric' })
 
   return (
@@ -718,10 +722,10 @@ export default function HomeScreen() {
             ))}
             <View style={styles.calendarFooterRow}>
               <TouchableOpacity style={styles.calendarBtnCancel} onPress={() => setShowDatePicker(false)} activeOpacity={0.85}>
-                <Text style={styles.calendarBtnCancelText}>İPTAL</Text>
+                <Text style={styles.calendarBtnCancelText}>{t('home.calendarCancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.calendarBtnOk} onPress={onCalendarConfirm} activeOpacity={0.85}>
-                <Text style={styles.calendarBtnOkText}>TAMAM</Text>
+                <Text style={styles.calendarBtnOkText}>{t('home.calendarOk')}</Text>
               </TouchableOpacity>
             </View>
           </SafeAreaView>
@@ -731,7 +735,7 @@ export default function HomeScreen() {
       <Modal visible={showTypeModal} transparent animationType="fade">
         <Pressable style={styles.modalBackdrop} onPress={() => setShowTypeModal(false)}>
           <Pressable style={styles.typeSheet} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.typeSheetTitle}>{t.home.selectFacilityType}</Text>
+            <Text style={styles.typeSheetTitle}>{t('home.selectFacilityType')}</Text>
             {typeOptions.map((o) => (
               <TouchableOpacity
                 key={o.key}
@@ -761,7 +765,7 @@ export default function HomeScreen() {
         <View style={styles.regionModalRoot}>
           <SafeAreaView style={styles.regionModalSafe} edges={['top', 'bottom']}>
             <View style={styles.regionModalHeader}>
-              <Text style={[styles.regionModalTitle, { flex: 1 }]}>Filtrele</Text>
+              <Text style={[styles.regionModalTitle, { flex: 1 }]}>{t('home.filter')}</Text>
               <TouchableOpacity onPress={() => setShowFilterModal(false)} hitSlop={12} accessibilityRole="button">
                 <Ionicons name="close" size={24} color="#0A1628" />
               </TouchableOpacity>
@@ -772,7 +776,7 @@ export default function HomeScreen() {
               contentContainerStyle={styles.filterIdxScrollContent}
             >
               <View style={styles.filterIdxAramaHeaderRow}>
-                <Text style={[styles.filterIdxSectionLabel, styles.filterIdxSectionLabelFirst]}>ARAMA YARIŞAPI</Text>
+                <Text style={[styles.filterIdxSectionLabel, styles.filterIdxSectionLabelFirst]}>{t('home.searchRangeLabel')}</Text>
                 <Text style={styles.filterIdxKmTeal}>{filterMesafe} km</Text>
               </View>
               <Slider
@@ -810,12 +814,12 @@ export default function HomeScreen() {
                   <ActivityIndicator size="small" color="#0ABAB5" />
                 ) : (
                   <Text style={styles.filterIdxGpsBtnText}>
-                    📍 Konumumu Kullan — {filterMesafe} km çevresinde ara
+                    {t('home.useMyLocation', { distance: filterMesafe })}
                   </Text>
                 )}
               </TouchableOpacity>
 
-              <Text style={styles.filterIdxSectionLabel}>GÜNLÜK FİYAT ARALIĞI</Text>
+              <Text style={styles.filterIdxSectionLabel}>{t('home.dailyPriceRange')}</Text>
               <View style={styles.filterIdxPriceRow}>
                 <View style={styles.filterIdxPriceBox}>
                   <Text style={styles.filterIdxPriceBoxLabel}>MIN</Text>
@@ -840,14 +844,14 @@ export default function HomeScreen() {
                 thumbTintColor="#0ABAB5"
               />
 
-              <Text style={styles.filterIdxSectionLabel}>SIRALAMA</Text>
+              <Text style={styles.filterIdxSectionLabel}>{t('home.sortingLabel')}</Text>
               <View style={styles.filterIdxSortGrid}>
                 {(
                   [
-                    { key: 'populer' as const, label: '⭐ Popüler' },
-                    { key: 'ucuzdan' as const, label: '💰 Ucuzdan Pahalıya' },
-                    { key: 'pahalidan' as const, label: '💎 Pahalıdan Ucuza' },
-                    { key: 'puan' as const, label: '🏆 En Yüksek Puan' },
+                    { key: 'populer' as const, labelKey: 'home.sortPopular' },
+                    { key: 'ucuzdan' as const, labelKey: 'home.sortCheapest' },
+                    { key: 'pahalidan' as const, labelKey: 'home.sortExpensive' },
+                    { key: 'puan' as const, labelKey: 'home.sortHighestRating' },
                   ] as const
                 ).map((opt) => {
                   const active = siralama === opt.key
@@ -859,7 +863,7 @@ export default function HomeScreen() {
                         activeOpacity={0.85}
                       >
                         <Text style={[styles.filterIdxSortBtnText, active && styles.filterIdxSortBtnTextActive]} numberOfLines={2}>
-                          {opt.label}
+                          {t(opt.labelKey)}
                         </Text>
                       </TouchableOpacity>
                     </View>
@@ -867,17 +871,18 @@ export default function HomeScreen() {
                 })}
               </View>
 
-              <Text style={styles.filterIdxSectionLabel}>MİNİMUM PUAN</Text>
+              <Text style={styles.filterIdxSectionLabel}>{t('home.minRatingLabel')}</Text>
               <View style={styles.filterIdxPuanRow}>
                 {(
                   [
-                    { value: null as number | null, label: 'Tümü' },
-                    { value: 3 as number | null, label: '3★+' },
-                    { value: 4 as number | null, label: '4★+' },
-                    { value: 4.5 as number | null, label: '4.5★+' },
+                    { value: null as number | null, labelKey: 'home.allRatings' },
+                    { value: 3 as number | null, labelKey: null, rawLabel: '3★+' },
+                    { value: 4 as number | null, labelKey: null, rawLabel: '4★+' },
+                    { value: 4.5 as number | null, labelKey: null, rawLabel: '4.5★+' },
                   ] as const
                 ).map((opt) => {
                   const active = minPuan === opt.value
+                  const label = 'labelKey' in opt && opt.labelKey === null ? opt.rawLabel : t('home.allRatings')
                   return (
                     <TouchableOpacity
                       key={String(opt.value)}
@@ -885,13 +890,13 @@ export default function HomeScreen() {
                       onPress={() => setMinPuan(opt.value)}
                       activeOpacity={0.85}
                     >
-                      <Text style={[styles.filterIdxPuanPillText, active && styles.filterIdxPuanPillTextActive]}>{opt.label}</Text>
+                      <Text style={[styles.filterIdxPuanPillText, active && styles.filterIdxPuanPillTextActive]}>{label}</Text>
                     </TouchableOpacity>
                   )
                 })}
               </View>
 
-              <Text style={styles.filterIdxSectionLabel}>ÖZELLİKLER</Text>
+              <Text style={styles.filterIdxSectionLabel}>{t('home.featuresLabel')}</Text>
               <View style={styles.filterIdxImkanWrap}>
                 {tumImkanlar.map((im) => {
                   const active = secilenImkanlar.includes(im)
@@ -926,10 +931,10 @@ export default function HomeScreen() {
                 }}
                 activeOpacity={0.85}
               >
-                <Text style={styles.filterIdxClearBtnText}>Temizle</Text>
+                <Text style={styles.filterIdxClearBtnText}>{t('home.clearFilters')}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.filterIdxApplyBtn} onPress={onApplyFilterModal} activeOpacity={0.85}>
-                <Text style={styles.filterIdxApplyBtnText}>Sonuçları Gör</Text>
+                <Text style={styles.filterIdxApplyBtnText}>{t('home.seeResults')}</Text>
               </TouchableOpacity>
             </View>
           </SafeAreaView>
@@ -945,9 +950,7 @@ export default function HomeScreen() {
               </TouchableOpacity>
               <Text style={styles.regionModalTitle}>
                 {regionStep === 'bolge'
-                  ? lang === 'tr'
-                    ? 'Bölge seçin'
-                    : 'Select region'
+                  ? t('home.selectRegion')
                   : regionStep === 'il'
                     ? selectedBolge ?? ''
                     : selectedIl ?? ''}
@@ -1025,12 +1028,12 @@ export default function HomeScreen() {
             <View style={styles.headerSide} />
             <Image source={require('../../assets/images/logo.png')} style={styles.headerLogo} contentFit="contain" />
             <View style={[styles.headerSide, styles.headerLang]}>
-              <TouchableOpacity onPress={() => setLang('tr')} style={styles.langChip}>
-                <Text style={[styles.langChipText, lang === 'tr' && styles.langChipActive]}>{`🇹🇷 ${t.home.langTr}`}</Text>
+              <TouchableOpacity onPress={() => { void changeLanguage('tr') }} style={styles.langChip}>
+                <Text style={[styles.langChipText, isTr && styles.langChipActive]}>{`🇹🇷 ${t('home.langTr')}`}</Text>
               </TouchableOpacity>
               <Text style={styles.langSep}>|</Text>
-              <TouchableOpacity onPress={() => setLang('en')} style={styles.langChip}>
-                <Text style={[styles.langChipText, lang === 'en' && styles.langChipActive]}>{`🇬🇧 ${t.home.langEn}`}</Text>
+              <TouchableOpacity onPress={() => { void changeLanguage('en') }} style={styles.langChip}>
+                <Text style={[styles.langChipText, isEn && styles.langChipActive]}>{`🇬🇧 ${t('home.langEn')}`}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1077,16 +1080,16 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.searchCard}>
-          <Text style={styles.fieldLabel}>{lang === 'tr' ? 'BÖLGE' : 'REGION'}</Text>
+          <Text style={styles.fieldLabel}>{t('home.regionLabel')}</Text>
           <TouchableOpacity style={styles.fieldRow} onPress={openRegionModal} activeOpacity={0.85}>
             <Ionicons name="map-outline" size={18} color="#0A1628" />
             <Text style={[styles.fieldInput, styles.fieldFakeInput, !region && { color: '#94a3b8' }]} numberOfLines={1}>
-              {region || t.home.locationPlaceholder}
+              {region || t('home.locationPlaceholder')}
             </Text>
             <Ionicons name="chevron-down" size={18} color="#0A1628" />
           </TouchableOpacity>
 
-          <Text style={styles.fieldLabel}>{lang === 'tr' ? 'TESİS TİPİ' : 'FACILITY TYPE'}</Text>
+          <Text style={styles.fieldLabel}>{t('home.facilityTypeLabel')}</Text>
           <TouchableOpacity style={styles.fieldRow} onPress={() => setShowTypeModal(true)} activeOpacity={0.85}>
             <Ionicons name="business-outline" size={18} color="#0A1628" />
             <Text style={[styles.fieldInput, styles.fieldFakeInput]} numberOfLines={1}>
@@ -1095,18 +1098,18 @@ export default function HomeScreen() {
             <Ionicons name="chevron-down" size={18} color="#0A1628" />
           </TouchableOpacity>
 
-          <Text style={styles.fieldLabel}>{lang === 'tr' ? 'TARİH' : 'DATE'}</Text>
+          <Text style={styles.fieldLabel}>{t('home.dateLabel')}</Text>
           <TouchableOpacity style={styles.fieldRow} onPress={openDatePickerModal} activeOpacity={0.85}>
             <Ionicons name="calendar-outline" size={18} color="#0A1628" />
             <Text style={[styles.fieldInput, styles.fieldFakeInput]}>{formatDate(date)}</Text>
           </TouchableOpacity>
 
-          <Text style={styles.fieldLabel}>{lang === 'tr' ? 'TESİS ADI' : 'FACILITY NAME'}</Text>
+          <Text style={styles.fieldLabel}>{t('home.facilityNameLabel')}</Text>
           <View>
             <View style={styles.fieldRow}>
               <Ionicons name="search-outline" size={18} color="#0A1628" />
               <TextInput
-                placeholder={t.home.facilityNamePlaceholder}
+                placeholder={t('home.facilityNamePlaceholder')}
                 value={facilityName}
                 onChangeText={(text) => {
                   setFacilityName(text)
@@ -1153,22 +1156,22 @@ export default function HomeScreen() {
 
           <View style={styles.searchButtonsRow}>
             <TouchableOpacity style={styles.btnPrimary} onPress={onSearchFacilities} activeOpacity={0.9} disabled={searchLoading}>
-              <Text style={styles.btnPrimaryText}>{t.home.searchFacilities}</Text>
+              <Text style={styles.btnPrimaryText}>{t('home.searchFacilities')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.btnSecondary} onPress={() => setShowFilterModal(true)} activeOpacity={0.9}>
               <Ionicons name="options-outline" size={20} color="#0ABAB5" />
-              <Text style={styles.btnSecondaryText}>{t.home.filter}</Text>
+              <Text style={styles.btnSecondaryText}>{t('home.filter')}</Text>
             </TouchableOpacity>
           </View>
         </View>
 
         <View>
-          {loadError ? <Text style={styles.errorBanner}>{t.home.loadError}</Text> : null}
+          {loadError ? <Text style={styles.errorBanner}>{t('home.loadError')}</Text> : null}
 
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>{t.home.categoriesTitle}</Text>
+            <Text style={styles.sectionTitle}>{t('home.categoriesTitle')}</Text>
             <TouchableOpacity activeOpacity={0.7}>
-              <Text style={styles.seeAll}>{t.home.seeAll} →</Text>
+              <Text style={styles.seeAll}>{t('home.seeAll')} →</Text>
             </TouchableOpacity>
           </View>
           <View style={styles.catStack}>
@@ -1179,7 +1182,7 @@ export default function HomeScreen() {
                   : c.key === 'beach'
                     ? require('../../assets/images/tesis_kategorisi-beach.png')
                     : require('../../assets/images/tesis_kategorsi-aquapark.png')
-              const badgeText = c.key === 'beach' ? t.home.badgeNew : t.home.badgePopular
+              const badgeText = c.key === 'beach' ? t('home.badgeNew') : t('home.badgePopular')
               return (
                 <TouchableOpacity
                   key={c.key}
@@ -1210,7 +1213,7 @@ export default function HomeScreen() {
           </View>
 
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>{searchMode ? t.home.searchResultsTitle : t.home.popularTitle}</Text>
+            <Text style={styles.sectionTitle}>{searchMode ? t('home.searchResultsTitle') : t('home.popularTitle')}</Text>
           </View>
 
           {loading || searchLoading ? (
@@ -1218,7 +1221,7 @@ export default function HomeScreen() {
               <ActivityIndicator size="large" color="#0ABAB5" />
             </View>
           ) : listToRender.length === 0 ? (
-            <Text style={styles.empty}>{t.home.noResults}</Text>
+            <Text style={styles.empty}>{t('home.noResults')}</Text>
           ) : (
             listToRender.map((item) => renderFacilityCard(item))
           )}
@@ -1226,26 +1229,26 @@ export default function HomeScreen() {
           {/* Nasıl Çalışır */}
           <View style={{ marginTop: 32, marginHorizontal: 16, backgroundColor: '#0A1628', borderRadius: 20, padding: 20 }}>
             <Text style={{ fontSize: 20, fontWeight: '800', color: '#ffffff', marginBottom: 4 }}>
-              {lang === 'tr' ? 'Nasıl Çalışır?' : 'How It Works'}
+              {t('home.howItWorks')}
             </Text>
             <Text style={{ fontSize: 13, color: '#94a3b8', marginBottom: 20 }}>
-              {lang === 'tr' ? '3 adımda şezlong rezervasyonu' : 'Reserve a sunbed in 3 steps'}
+              {t('home.howItWorksSubtitle')}
             </Text>
             {[
               {
                 icon: 'search-outline' as const,
-                title: lang === 'tr' ? 'Tesis Seç' : 'Find a Venue',
-                desc: lang === 'tr' ? 'Konum, tip veya tarihe göre filtrele.' : 'Filter by location, type or date.',
+                title: t('home.step1Title'),
+                desc: t('home.step1Desc'),
               },
               {
                 icon: 'umbrella-outline' as const,
-                title: lang === 'tr' ? 'Şezlong Seç' : 'Pick a Sunbed',
-                desc: lang === 'tr' ? 'Tesis planı üzerinden istediğin şezlongu seç.' : 'Choose your sunbed on the venue map.',
+                title: t('home.step2Title'),
+                desc: t('home.step2Desc'),
               },
               {
                 icon: 'checkmark-circle-outline' as const,
-                title: lang === 'tr' ? 'Öde & Uzan' : 'Pay & Relax',
-                desc: lang === 'tr' ? 'Güvenli ödeme yap, QR kodunu göster.' : 'Pay securely and show your QR code.',
+                title: t('home.step3Title'),
+                desc: t('home.step3Desc'),
               },
             ].map((step, i) => (
               <View key={i} style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 20, gap: 14 }}>
@@ -1261,7 +1264,7 @@ export default function HomeScreen() {
           </View>
 
           {/* Kullanıcılar Ne Diyor */}
-          <ReviewsSection lang={lang} />
+          <ReviewsSection />
         </View>
       </ScrollView>
     </SafeAreaView>

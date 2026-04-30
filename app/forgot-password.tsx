@@ -2,30 +2,33 @@ import { Ionicons } from '@expo/vector-icons'
 import { Link, useRouter } from 'expo-router'
 import { useState } from 'react'
 import { Alert, Image, ImageBackground, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
-import { useAuthLocale } from '../lib/auth-locale-context'
+import { useTranslation } from 'react-i18next'
+import { changeLanguage } from '../lib/i18n'
 import { supabase } from '../lib/supabase'
 
 export default function ForgotPasswordScreen() {
   const router = useRouter()
-  const { lang, setLang, t } = useAuthLocale()
+  const { t, i18n } = useTranslation()
+  const isTr = i18n.language.startsWith('tr')
+  const isEn = i18n.language.startsWith('en')
   const [email, setEmail] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
   const handleSend = async () => {
     const mail = email.trim()
     if (!mail) {
-      Alert.alert(t.common.errorTitle, t.forgot.alertEnterEmail)
+      Alert.alert(t('common.errorTitle'), t('forgot.alertEnterEmail'))
       return
     }
     setSubmitting(true)
     const { error } = await supabase.auth.resetPasswordForEmail(mail)
     setSubmitting(false)
     if (error) {
-      Alert.alert(t.common.errorTitle, error.message)
+      Alert.alert(t('common.errorTitle'), error.message)
       return
     }
-    Alert.alert(t.forgot.alertSentTitle, t.forgot.alertSentBody, [
-      { text: t.common.ok, onPress: () => router.replace('/') },
+    Alert.alert(t('forgot.alertSentTitle'), t('forgot.alertSentBody'), [
+      { text: t('common.ok'), onPress: () => router.replace('/') },
     ])
   }
 
@@ -35,22 +38,22 @@ export default function ForgotPasswordScreen() {
         <View style={styles.card}>
           <Image source={require('../assets/images/logo.png')} style={styles.logo} resizeMode="contain" />
           <View style={{ flexDirection: 'row', justifyContent: 'center', marginBottom: 8, gap: 12 }}>
-            <TouchableOpacity onPress={() => setLang('tr')}>
-              <Text style={{ fontSize: 12, color: lang === 'tr' ? '#3333cc' : '#aaaaaa', fontWeight: lang === 'tr' ? '700' : '600' }}>{t.forgot.langTr}</Text>
+            <TouchableOpacity onPress={() => { void changeLanguage('tr') }}>
+              <Text style={{ fontSize: 12, color: isTr ? '#3333cc' : '#aaaaaa', fontWeight: isTr ? '700' : '600' }}>{t('forgot.langTr')}</Text>
             </TouchableOpacity>
             <Text style={{ fontSize: 12, color: '#aaaaaa' }}>|</Text>
-            <TouchableOpacity onPress={() => setLang('en')}>
-              <Text style={{ fontSize: 12, color: lang === 'en' ? '#3333cc' : '#aaaaaa', fontWeight: lang === 'en' ? '700' : '600' }}>{t.forgot.langEn}</Text>
+            <TouchableOpacity onPress={() => { void changeLanguage('en') }}>
+              <Text style={{ fontSize: 12, color: isEn ? '#3333cc' : '#aaaaaa', fontWeight: isEn ? '700' : '600' }}>{t('forgot.langEn')}</Text>
             </TouchableOpacity>
           </View>
-          <Text style={styles.title}>{t.forgot.title}</Text>
+          <Text style={styles.title}>{t('forgot.title')}</Text>
           <Text style={styles.hint}>
-            {t.forgot.hint}
+            {t('forgot.hint')}
           </Text>
           <View style={styles.inputRow}>
             <Ionicons name="mail-outline" size={22} color="#3333cc" />
             <TextInput
-              placeholder={t.forgot.placeholderEmail}
+              placeholder={t('forgot.placeholderEmail')}
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
@@ -63,13 +66,13 @@ export default function ForgotPasswordScreen() {
             disabled={submitting}
             style={[styles.sendBtn, submitting && styles.sendBtnDisabled]}
           >
-            <Text style={styles.sendBtnText}>{t.forgot.send}</Text>
+            <Text style={styles.sendBtnText}>{t('forgot.send')}</Text>
           </TouchableOpacity>
         </View>
         <View style={styles.backWrapper}>
           <Link href="/" asChild>
             <TouchableOpacity style={styles.backBtn}>
-              <Text style={styles.backBtnText}>{t.forgot.backToLogin}</Text>
+              <Text style={styles.backBtnText}>{t('forgot.backToLogin')}</Text>
             </TouchableOpacity>
           </Link>
         </View>
