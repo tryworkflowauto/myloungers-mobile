@@ -10,7 +10,10 @@
     "newArchEnabled": true,
     "ios": {
       "bundleIdentifier": "com.myloungers.app",
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.myloungers.app",
@@ -65,7 +68,8 @@
         {
           "iosUrlScheme": "com.googleusercontent.apps.891007758452-of66us3pu4djridg5a4u06bduseaok86"
         }
-      ]
+      ],
+      "expo-apple-authentication"
     ],
     "experiments": {
       "typedRoutes": true,

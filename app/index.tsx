@@ -1,8 +1,10 @@
 import { Ionicons } from '@expo/vector-icons'
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin'
+import * as AppleAuthentication from 'expo-apple-authentication'
+import * as Crypto from 'expo-crypto'
 import { Link, useRouter } from 'expo-router'
 import { useEffect, useState } from 'react'
-import { ActivityIndicator, Alert, Image, ImageBackground, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import { ActivityIndicator, Alert, Image, ImageBackground, Modal, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
 import { useAuthLocale } from '../lib/auth-locale-context'
 import { supabase } from '../lib/supabase'
 
@@ -28,16 +30,84 @@ export default function LoginScreen() {
   const [loginErrVisible, setLoginErrVisible] = useState(false)
   const [loginErrMsg, setLoginErrMsg] = useState('')
   const [googleLoading, setGoogleLoading] = useState(false)
+  const [appleLoading, setAppleLoading] = useState(false)
 
+  // Android: Google Sign-In yapılandırması
   useEffect(() => {
-    GoogleSignin.configure({
-      webClientId: '891007758452-eg3vit8jhh61h7tl0tappumb0a4a08tu.apps.googleusercontent.com',
-      iosClientId: '891007758452-of66us3pu4djridg5a4u06bduseaok86.apps.googleusercontent.com',
-      offlineAccess: true,
-      scopes: ['profile', 'email'],
-    })
+    if (Platform.OS !== 'ios') {
+      GoogleSignin.configure({
+        webClientId: '891007758452-eg3vit8jhh61h7tl0tappumb0a4a08tu.apps.googleusercontent.com',
+        offlineAccess: true,
+        scopes: ['profile', 'email'],
+      })
+    }
   }, [])
 
+  // ── iOS: Apple ile Giriş ──────────────────────────────────────────────────
+  const handleAppleLogin = async () => {
+    if (appleLoading) return
+    setAppleLoading(true)
+    try {
+      // Nonce: Apple Sign-In nonce'u tam olarak destekler.
+      // rawNonce → SHA-256 HEX hash → Apple'a ver → Supabase rawNonce'u alır,
+      // kendi hash'ini hesaplar, token içindekiyle karşılaştırır.
+      const rawNonce = Crypto.randomUUID()
+      const hashedNonce = await Crypto.digestStringAsync(
+        Crypto.CryptoDigestAlgorithm.SHA256,
+        rawNonce,
+        { encoding: Crypto.CryptoEncoding.HEX },
+      )
+
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+        nonce: hashedNonce,
+      })
+
+      if (!credential.identityToken) throw new Error('Apple identity token alınamadı')
+
+      const { data, error } = await supabase.auth.signInWithIdToken({
+        provider: 'apple',
+        token: credential.identityToken,
+        nonce: rawNonce,
+      })
+      if (error) throw error
+
+      // kullanicilar tablosunda kayıt yoksa oluştur
+      const { data: existing } = await supabase
+        .from('kullanicilar')
+        .select('id')
+        .eq('id', data.user.id)
+        .maybeSingle()
+
+      if (!existing) {
+        // Apple sadece ilk girişte ad/soyad ve email verir
+        const ad = credential.fullName?.givenName || data.user.email?.split('@')[0] || 'Kullanıcı'
+        const soyad = credential.fullName?.familyName || ''
+        const userEmail = credential.email || data.user.email || ''
+        await supabase.from('kullanicilar').insert({
+          id: data.user.id,
+          ad,
+          soyad,
+          email: userEmail,
+          rol: 'musteri',
+        })
+      }
+
+      router.replace('/(tabs)')
+    } catch (e: unknown) {
+      const err = e as { code?: string; message?: string }
+      // ERR_REQUEST_CANCELED: kullanıcı iptal etti
+      if (err.code === 'ERR_REQUEST_CANCELED') return
+      Alert.alert('Hata', err.message || 'Apple ile giriş başarısız')
+    } finally {
+      setAppleLoading(false)
+    }
+  }
+
+  // ── Android: Google ile Giriş ─────────────────────────────────────────────
   const handleGoogleLogin = async () => {
     if (googleLoading) return
     setGoogleLoading(true)
@@ -125,19 +195,37 @@ export default function LoginScreen() {
               <Text style={styles.registerBtnText}>{t.login.createAccount}</Text>
             </Link>
           </View>
-          <TouchableOpacity
-            style={[styles.googleBtn, googleLoading && { opacity: 0.7 }]}
-            activeOpacity={0.85}
-            disabled={googleLoading}
-            onPress={() => void handleGoogleLogin()}
-          >
-            {googleLoading ? (
-              <ActivityIndicator size="small" color="#4285F4" style={{ marginRight: 8 }} />
-            ) : (
-              <Image source={{ uri: 'https://www.google.com/favicon.ico' }} style={{ width: 18, height: 18, marginRight: 8 }} />
-            )}
-            <Text style={styles.googleBtnText}>{t.login.googleSignIn}</Text>
-          </TouchableOpacity>
+
+          {/* iOS: Apple ile Giriş — Android: Google ile Giriş */}
+          {Platform.OS === 'ios' ? (
+            <TouchableOpacity
+              style={[styles.googleBtn, appleLoading && { opacity: 0.7 }]}
+              activeOpacity={0.85}
+              disabled={appleLoading}
+              onPress={() => void handleAppleLogin()}
+            >
+              {appleLoading ? (
+                <ActivityIndicator size="small" color="#000000" style={{ marginRight: 8 }} />
+              ) : (
+                <Ionicons name="logo-apple" size={18} color="#000000" style={{ marginRight: 8 }} />
+              )}
+              <Text style={styles.googleBtnText}>Apple ile Giriş</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={[styles.googleBtn, googleLoading && { opacity: 0.7 }]}
+              activeOpacity={0.85}
+              disabled={googleLoading}
+              onPress={() => void handleGoogleLogin()}
+            >
+              {googleLoading ? (
+                <ActivityIndicator size="small" color="#4285F4" style={{ marginRight: 8 }} />
+              ) : (
+                <Image source={{ uri: 'https://www.google.com/favicon.ico' }} style={{ width: 18, height: 18, marginRight: 8 }} />
+              )}
+              <Text style={styles.googleBtnText}>{t.login.googleSignIn}</Text>
+            </TouchableOpacity>
+          )}
         </View>
         <View style={styles.forgotWrapper}>
           <Link href="/forgot-password" style={styles.forgotBtn}>
