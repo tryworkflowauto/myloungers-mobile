@@ -526,37 +526,49 @@ export default function ProfilScreen() {
       } = await supabase.auth.getUser()
       if (!user) return
 
-      const { data, error } = await supabase
+      // id-öncelikli sorgu: auth.uid == kullanicilar.id garantisi, indexed → hızlı.
+      // Bulamazsa email ile fallback (eski email/şifre kayıtları için geriye dönük uyumluluk).
+      const { data: dataById } = await supabase
         .from('kullanicilar')
         .select('id, ad, soyad, telefon, email, sehir, dogum_tarihi, rol, created_at, eposta_bildirim')
-        .eq('email', user.email)
-        .single()
+        .eq('id', user.id)
+        .maybeSingle()
 
-      if (data) {
-        const d = data.dogum_tarihi ? data.dogum_tarihi.split('-').reverse().join('.') : ''
-        const emailVal = data.email ?? user.email ?? ''
+      let userData = dataById
+      if (!userData) {
+        const { data: dataByEmail } = await supabase
+          .from('kullanicilar')
+          .select('id, ad, soyad, telefon, email, sehir, dogum_tarihi, rol, created_at, eposta_bildirim')
+          .eq('email', user.email)
+          .maybeSingle()
+        userData = dataByEmail
+      }
+
+      if (userData) {
+        const d = userData.dogum_tarihi ? userData.dogum_tarihi.split('-').reverse().join('.') : ''
+        const emailVal = userData.email ?? user.email ?? ''
         setProfil({
-          id: data.id,
-          ad: data.ad ?? '',
-          soyad: data.soyad ?? '',
+          id: userData.id,
+          ad: userData.ad ?? '',
+          soyad: userData.soyad ?? '',
           email: emailVal,
-          telefon: data.telefon != null ? String(data.telefon) : '',
-          sehir: data.sehir != null ? String(data.sehir) : '',
-          uyeAyYil: formatUyeAyYil(data.created_at),
+          telefon: userData.telefon != null ? String(userData.telefon) : '',
+          sehir: userData.sehir != null ? String(userData.sehir) : '',
+          uyeAyYil: formatUyeAyYil(userData.created_at),
           eposta_dogrulandi: !!user.email_confirmed_at,
         })
         setForm({
-          ad: data.ad ?? '',
-          soyad: data.soyad ?? '',
+          ad: userData.ad ?? '',
+          soyad: userData.soyad ?? '',
           email: emailVal,
-          telefon: data.telefon != null ? String(data.telefon) : '',
-          sehir: data.sehir != null ? String(data.sehir) : '',
+          telefon: userData.telefon != null ? String(userData.telefon) : '',
+          sehir: userData.sehir != null ? String(userData.sehir) : '',
           dogumTarihi: d,
         })
 
         // E-posta bildirim tercihini DB'den oku; kolon NULL ise varsayılan true
-        if (data.eposta_bildirim !== null && data.eposta_bildirim !== undefined) {
-          setEpostaBildirim(data.eposta_bildirim as boolean)
+        if (userData.eposta_bildirim !== null && userData.eposta_bildirim !== undefined) {
+          setEpostaBildirim(userData.eposta_bildirim as boolean)
         }
 
         // Yorumlar artık lazy yükleniyor (kullanıcı Yorumlarım tab'ına tıkladığında).
@@ -566,13 +578,13 @@ export default function ProfilScreen() {
             .select(
               'id, baslangic_tarih, bitis_tarih, sezlong_id, toplam_tutar, bakiye_yuklenen, bakiye_harcanan, bakiye_kalan, durum, tesis_id, rezervasyon_kodu, giris_yapildi, tesisler(ad, fotograflar, sehir, kategori, slug), sezlonglar(numara, grup_id, sezlong_gruplari(ad))',
             )
-            .eq('kullanici_id', data.id)
+            .eq('kullanici_id', userData.id)
             .in('durum', ['onaylandi', 'aktif', 'tamamlandi', 'iptal', 'iptal_edildi'])
             .order('baslangic_tarih', { ascending: false }),
           supabase
             .from('favoriler')
             .select('id, tesis_id, created_at, tesisler(ad, fotograflar, slug)')
-            .eq('kullanici_id', data.id)
+            .eq('kullanici_id', userData.id)
             .order('created_at', { ascending: false }),
         ])
 
