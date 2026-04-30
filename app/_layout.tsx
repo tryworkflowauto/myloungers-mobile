@@ -4,10 +4,17 @@ import { router } from 'expo-router'
 import { Stack } from 'expo-router'
 import { supabase } from '../lib/supabase'
 import SplashScreen from '../components/SplashScreen'
+import initI18n from '../lib/i18n'
 
 export default function RootLayout() {
   const [showSplash, setShowSplash] = useState(true)
   const [splashMounted, setSplashMounted] = useState(true)
+  const [i18nReady, setI18nReady] = useState(false)
+
+  // i18n init — genelde <500ms, splash (2500ms) bitmeden tamamlanır
+  useEffect(() => {
+    initI18n().then(() => setI18nReady(true)).catch(() => setI18nReady(true))
+  }, [])
 
   useEffect(() => {
     // 2.5 saniye sonra fade-out başlat
@@ -70,8 +77,8 @@ export default function RootLayout() {
 
   return (
     <AuthLocaleProvider>
-      {/* Stack yalnızca splash tamamen bittikten sonra mount edilir */}
-      {!splashMounted && (
+      {/* Stack yalnızca splash tamamen bitip i18n yüklendikten sonra mount edilir */}
+      {!splashMounted && i18nReady && (
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="index" options={{ headerShown: false }} />
           <Stack.Screen name="register" options={{ headerShown: false }} />

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { Ionicons } from '@expo/vector-icons'
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin'
 import * as AppleAuthentication from 'expo-apple-authentication'
@@ -25,6 +26,10 @@ function mapLoginError(rawMsg: string, tLogin: { loginErrInvalidCredentials: str
 export default function LoginScreen() {
   const router = useRouter()
   const { lang, setLang, t } = useAuthLocale()
+
+  // i18n test — sadece doğrulama için, üretimde kaldırılacak
+  const { t: ti18n } = useTranslation()
+  console.log('[i18n test] auth.login =>', ti18n('auth.login'))
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loginErrVisible, setLoginErrVisible] = useState(false)

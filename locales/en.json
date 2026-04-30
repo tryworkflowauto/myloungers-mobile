@@ -1,0 +1,24 @@
+{
+  "common": {
+    "loading": "Loading...",
+    "error": "An error occurred",
+    "ok": "OK",
+    "cancel": "Cancel",
+    "save": "Save",
+    "delete": "Delete",
+    "edit": "Edit",
+    "back": "Back",
+    "next": "Next",
+    "search": "Search"
+  },
+  "auth": {
+    "login": "Sign In",
+    "register": "Create Account",
+    "logout": "Sign Out",
+    "email": "Email",
+    "password": "Password",
+    "forgotPassword": "Forgot Password",
+    "loginWithGoogle": "Sign in with Google",
+    "loginWithApple": "Sign in with Apple"
+  }
+}
