@@ -60,6 +60,12 @@
     "alertSentTitle": "Sent",
     "alertSentBody": "A password reset link has been sent to your email address."
   },
+  "tabs": {
+    "home": "Home",
+    "search": "Search",
+    "favorites": "Favorites",
+    "profile": "Profile"
+  },
   "home": {
     "locationPlaceholder": "Region (Bodrum, Antalya, Marmaris...)",
     "facilityTypePlaceholder": "Facility type",

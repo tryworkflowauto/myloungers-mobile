@@ -60,6 +60,12 @@
     "alertSentTitle": "Gönderildi",
     "alertSentBody": "Şifre sıfırlama bağlantısı e-posta adresinize gönderildi."
   },
+  "tabs": {
+    "home": "Ana Sayfa",
+    "search": "Ara",
+    "favorites": "Favoriler",
+    "profile": "Profil"
+  },
   "home": {
     "locationPlaceholder": "Bölge (Bodrum, Antalya, Marmaris...)",
     "facilityTypePlaceholder": "Tesis tipi",

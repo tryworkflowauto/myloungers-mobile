@@ -5,9 +5,6 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "splash": {
-      "backgroundColor": "#1ba2c4"
-    },
     "scheme": "myloungersmobile",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -42,21 +39,6 @@
     },
     "plugins": [
       "expo-router",
-      [
-        "expo-splash-screen",
-        {
-          "image": "./assets/images/splash-background.png",
-          "imageWidth": 1080,
-          "resizeMode": "cover",
-          "backgroundColor": "#1ba2c4",
-          "dark": {
-            "image": "./assets/images/splash-background.png",
-            "imageWidth": 1080,
-            "resizeMode": "cover",
-            "backgroundColor": "#1ba2c4"
-          }
-        }
-      ],
       "@react-native-community/datetimepicker",
       [
         "expo-location",
