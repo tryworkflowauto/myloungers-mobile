@@ -5,10 +5,16 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
+    "splash": {
+      "image": "./assets/images/splash-background.png",
+      "backgroundColor": "#2226f7",
+      "resizeMode": "cover"
+    },
     "scheme": "myloungersmobile",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
+      "icon": "./assets/images/icon.png",
       "bundleIdentifier": "com.myloungers.app",
       "supportsTablet": true,
       "infoPlist": {
@@ -18,7 +24,7 @@
     "android": {
       "package": "com.myloungers.app",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#2226f7",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
