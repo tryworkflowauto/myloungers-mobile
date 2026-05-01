@@ -6,7 +6,7 @@ type Props = {
   onAnimationEnd?: () => void
 }
 
-const SPLASH_VISIBLE_MS = 1250
+const SPLASH_VISIBLE_MS = 2250
 const FADE_OUT_MS = 250
 
 export default function SplashScreen({ visible, onAnimationEnd }: Props) {
