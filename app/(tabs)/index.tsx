@@ -73,8 +73,12 @@ const BOLGELER: Record<string, Record<string, string[]>> = {
   },
 }
 
-const WEEKDAY_LABELS_TR = ['P', 'S', 'Ç', 'P', 'C', 'C', 'P'] as const
-const WEEKDAY_LABELS_EN = ['M', 'T', 'W', 'T', 'F', 'S', 'S'] as const
+function bolgeBaslikCevir(bolgeAd: string, t: (key: string) => string): string {
+  if (bolgeAd === 'Ege') return t('regions.ege')
+  if (bolgeAd === 'Akdeniz') return t('regions.akdeniz')
+  if (bolgeAd === 'Marmara') return t('regions.marmara')
+  return bolgeAd
+}
 
 function sameCalendarDay(a: Date, b: Date) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
@@ -647,7 +651,11 @@ export default function HomeScreen() {
     return rows
   }, [calendarViewMonth])
 
-  const weekdayLabels = isTr ? WEEKDAY_LABELS_TR : WEEKDAY_LABELS_EN
+  const weekdayLabels = useMemo(() => {
+    const isTrLang = i18n.language?.startsWith('tr')
+    return isTrLang ? ['P', 'S', 'Ç', 'P', 'C', 'C', 'P'] : ['M', 'T', 'W', 'T', 'F', 'S', 'S']
+  }, [i18n.language])
+
   const monthYearLabel = calendarViewMonth.toLocaleDateString(locale, { month: 'long', year: 'numeric' })
 
   return (
@@ -952,7 +960,7 @@ export default function HomeScreen() {
                 {regionStep === 'bolge'
                   ? t('home.selectRegion')
                   : regionStep === 'il'
-                    ? selectedBolge ?? ''
+                    ? bolgeBaslikCevir(selectedBolge ?? '', t)
                     : selectedIl ?? ''}
               </Text>
               <View style={{ width: 24 }} />
@@ -970,7 +978,7 @@ export default function HomeScreen() {
                     }}
                     activeOpacity={0.85}
                   >
-                    <Text style={styles.regionBolgeTitle}>{item}</Text>
+                    <Text style={styles.regionBolgeTitle}>{bolgeBaslikCevir(item, t)}</Text>
                     <Ionicons name="chevron-forward" size={20} color="#94a3b8" />
                   </TouchableOpacity>
                 )}

@@ -10,7 +10,8 @@
     "edit": "Edit",
     "back": "Back",
     "next": "Next",
-    "search": "Search"
+    "search": "Search",
+    "default_user_name": "User"
   },
   "login": {
     "placeholderEmail": "Username / E-mail",
@@ -29,7 +30,9 @@
     "loginErrDefault": "Could not log in. Please try again later.",
     "loginErrOk": "OK",
     "appleLoginFailed": "Apple sign-in failed",
-    "googleLoginFailed": "Google sign-in failed"
+    "googleLoginFailed": "Google sign-in failed",
+    "apple_identity_token_failed": "Could not retrieve Apple identity token",
+    "google_id_token_failed": "Could not retrieve Google ID token"
   },
   "register": {
     "tagline": "To the My Loungers world",
@@ -83,6 +86,7 @@
     "working_hours_subtitle": "Weekly opening & closing",
     "closed": "Closed",
     "watch_promo": "Watch promo video",
+    "video_title": "Facility Video",
     "select_sunbed_title": "Select Sunbed",
     "select_sunbed_subtitle": "Choose your sunbed",
     "select_date": "Select date",
@@ -133,7 +137,7 @@
     "select_date_first": "Please select a reservation date first.",
     "select_at_least_one": "Please select at least one sunbed.",
     "ok": "OK",
-    "back": "Go Back",
+    "back": "Back",
     "search_facility": "Search Facility",
     "make_reservation": "Make Reservation",
     "service_24_7": "24/7 service",
@@ -188,6 +192,35 @@
     "error_create_failed": "Could not create reservation",
     "error_payment_init": "Could not start payment",
     "error_unexpected": "Unexpected error"
+  },
+  "order": {
+    "facility_menu": "Facility Menu",
+    "all_categories": "All",
+    "no_products_in_category": "No products in this category",
+    "your_cart": "YOUR CART",
+    "total": "Total",
+    "item_singular": "{{count}} item",
+    "item_plural": "{{count}} items",
+    "place_order": "Place Order",
+    "empty_cart": "Your cart is empty",
+    "success": "Your order has been received.",
+    "failed": "Could not place order",
+    "create_failed": "Could not create order",
+    "checkin_required": "Please check in to your sunbed first (scan QR or enter code).",
+    "missing_info": "Reservation or facility information is missing.",
+    "load_failed": "Could not load data.",
+    "reservation_not_found": "Reservation not found.",
+    "missing_parameter": "Missing parameter.",
+    "insufficient_balance": "Insufficient spending limit!"
+  },
+  "payment": {
+    "title": "Payment",
+    "session_not_found": "Payment session not found"
+  },
+  "regions": {
+    "ege": "Aegean",
+    "akdeniz": "Mediterranean",
+    "marmara": "Marmara"
   },
   "profile": {
     "welcome": "WELCOME",

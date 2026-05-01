@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { WebView } from 'react-native-webview'
@@ -9,6 +10,7 @@ import { supabase } from '../lib/supabase'
 const TEAL = '#0d9488'
 
 export default function OdemeWebview() {
+  const { t } = useTranslation()
   const router = useRouter()
   const { token, rezervasyon_id } = useLocalSearchParams<{ token?: string; rezervasyon_id?: string }>()
   const uri = token ? `https://vpos.paratika.com.tr/payment/${String(token)}` : ''
@@ -83,7 +85,7 @@ export default function OdemeWebview() {
         <TouchableOpacity onPress={() => router.back()} hitSlop={14} style={styles.headerBtn} accessibilityRole="button">
           <Ionicons name="chevron-back" size={26} color={TEAL} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Ödeme</Text>
+        <Text style={styles.headerTitle}>{t('payment.title')}</Text>
         <View style={styles.headerBtn} />
       </View>
       {uri ? (
@@ -110,7 +112,7 @@ export default function OdemeWebview() {
         />
       ) : (
         <View style={styles.empty}>
-          <Text style={styles.emptyText}>Ödeme oturumu bulunamadı.</Text>
+          <Text style={styles.emptyText}>{t('payment.session_not_found')}</Text>
         </View>
       )}
     </SafeAreaView>

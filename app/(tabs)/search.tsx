@@ -36,9 +36,6 @@ export type TesisRow = {
   boylam?: number | null
 }
 
-const WEEKDAY_LABELS_TR = ['P', 'S', 'Ç', 'P', 'C', 'C', 'P'] as const
-const WEEKDAY_LABELS_EN = ['M', 'T', 'W', 'T', 'F', 'S', 'S'] as const
-
 function sameCalendarDay(a: Date, b: Date) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
 }
@@ -417,7 +414,11 @@ export default function SearchScreen() {
     return rows
   }, [calendarViewMonth])
 
-  const weekdayLabels = isTr ? WEEKDAY_LABELS_TR : WEEKDAY_LABELS_EN
+  const weekdayLabels = useMemo(() => {
+    const isTrLang = i18n.language?.startsWith('tr')
+    return isTrLang ? ['P', 'S', 'Ç', 'P', 'C', 'C', 'P'] : ['M', 'T', 'W', 'T', 'F', 'S', 'S']
+  }, [i18n.language])
+
   const monthYearLabel = calendarViewMonth.toLocaleDateString(locale, { month: 'long', year: 'numeric' })
 
   const filteredResults = useMemo(() => {

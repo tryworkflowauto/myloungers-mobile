@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import React, { useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   ActivityIndicator,
   Image,
@@ -39,6 +40,7 @@ function fmtTl(v: number): string {
 }
 
 export default function SiparisScreen() {
+  const { t } = useTranslation()
   const router = useRouter()
   const params = useLocalSearchParams<{ rezervasyon_id: string; tesis_id?: string }>()
   const rezervasyonId = String(params?.rezervasyon_id ?? '')
@@ -65,7 +67,7 @@ export default function SiparisScreen() {
   useEffect(() => {
     async function loadData() {
       if (!rezervasyonId || !tesisId) {
-        showToast('Rezervasyon veya tesis bilgisi eksik.', 'error')
+        showToast(t('order.missing_info'), 'error')
         setYukleniyor(false)
         return
       }
@@ -101,7 +103,7 @@ export default function SiparisScreen() {
           (rezData.giris_yapildi !== true ||
             (rezData.durum !== 'onaylandi' && rezData.durum !== 'aktif'))
         ) {
-          showToast('Önce şezlongunuzun girişini yapın (QR okutun veya kod girin)', 'error')
+          showToast(t('order.checkin_required'), 'error')
           setTimeout(() => router.back(), 1500)
           setYukleniyor(false)
           return
@@ -112,16 +114,16 @@ export default function SiparisScreen() {
         setBakiyeHarcanan(num(rezData?.bakiye_harcanan))
         setKategoriler((katRes.data ?? []) as KategoriRow[])
         setUrunler((urunRes.data ?? []) as UrunRow[])
-        setTesisAd((tesisRes.data as any)?.ad || 'Tesis Menüsü')
+        setTesisAd((tesisRes.data as any)?.ad || t('order.facility_menu'))
       } catch (err: any) {
-        const msg = err?.message || 'Veriler yüklenemedi.'
+        const msg = err?.message || t('order.load_failed')
         showToast(msg, 'error')
       } finally {
         setYukleniyor(false)
       }
     }
     loadData()
-  }, [rezervasyonId, tesisId])
+  }, [rezervasyonId, tesisId, t])
 
   const urunlerFiltreli = useMemo(() => {
     if (seciliKategori === 'tumu') return urunler
@@ -157,15 +159,15 @@ export default function SiparisScreen() {
 
   async function handleSiparisVer() {
     if (!rezervasyonId || !tesisId) {
-      showToast('Eksik parametre.', 'error')
+      showToast(t('order.missing_parameter'), 'error')
       return
     }
     if (sepetAdetToplam <= 0) {
-      showToast('Sepetiniz boş.', 'error')
+      showToast(t('order.empty_cart'), 'error')
       return
     }
     if (sepetToplam > bakiyeKalan) {
-      showToast('Harcama limitiniz yetersiz!', 'error')
+      showToast(t('order.insufficient_balance'), 'error')
       return
     }
     setGonderiliyor(true)
@@ -176,7 +178,7 @@ export default function SiparisScreen() {
         .eq('id', rezervasyonId)
         .maybeSingle()
 
-      if (rezErr || !rezRow) throw rezErr || new Error('Rezervasyon bulunamadı.')
+      if (rezErr || !rezRow) throw rezErr || new Error(t('order.reservation_not_found'))
 
       const sezlongId = (rezRow as any).sezlong_id ?? null
       let sezlongNo = '-'
@@ -213,7 +215,7 @@ export default function SiparisScreen() {
         .select('id')
         .single()
 
-      if (siparisErr || !siparisData?.id) throw siparisErr || new Error('Sipariş oluşturulamadı.')
+      if (siparisErr || !siparisData?.id) throw siparisErr || new Error(t('order.create_failed'))
 
       const kalemler = Object.entries(sepet)
         .filter(([, adet]) => adet > 0)
@@ -248,10 +250,10 @@ export default function SiparisScreen() {
       setBakiyeHarcanan(yeniHarcanan)
       setBakiyeKalan(yeniKalan)
       setSepet({})
-      showToast('Siparişiniz alındı.', 'success')
+      showToast(t('order.success'), 'success')
       setTimeout(() => router.back(), 1500)
     } catch (err: any) {
-      const msg = err?.message || 'Sipariş verilemedi.'
+      const msg = err?.message || t('order.failed')
       showToast(msg, 'error')
     } finally {
       setGonderiliyor(false)
@@ -369,7 +371,7 @@ export default function SiparisScreen() {
           flexGrow: 0,
         }}
       >
-        {([{ id: 'tumu', ad: 'Tümü', icon: null } as KategoriRow, ...kategoriler]).map((k) => {
+        {([{ id: 'tumu', ad: t('order.all_categories'), icon: null } as KategoriRow, ...kategoriler]).map((k) => {
           const aktif = seciliKategori === k.id
           const iconStr = k.icon != null && String(k.icon).trim() !== '' ? String(k.icon).trim() : ''
           return (
@@ -407,7 +409,7 @@ export default function SiparisScreen() {
         {urunlerFiltreli.length === 0 && (
           <View style={{ alignItems: 'center', padding: 30 }}>
             <Ionicons name="restaurant-outline" size={40} color="#cbd5e1" />
-            <Text style={{ marginTop: 10, fontSize: 13, color: '#64748b' }}>Bu kategoride ürün yok</Text>
+            <Text style={{ marginTop: 10, fontSize: 13, color: '#64748b' }}>{t('order.no_products_in_category')}</Text>
           </View>
         )}
         {urunlerFiltreli.map((u) => {
@@ -505,7 +507,7 @@ export default function SiparisScreen() {
           {sepetAcik && (
             <ScrollView style={{ maxHeight: 220, marginBottom: 10 }} showsVerticalScrollIndicator={false}>
               <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', fontWeight: '700', letterSpacing: 1, marginBottom: 8 }}>
-                SEPETİNİZ
+                {t('order.your_cart')}
               </Text>
               {Object.entries(sepet).map(([urunId, adet]) => {
                 const u = urunler.find((x) => String(x.id) === String(urunId))
@@ -541,7 +543,7 @@ export default function SiparisScreen() {
                 )
               })}
               <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(255,255,255,0.15)', paddingTop: 8, marginTop: 4, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>Toplam</Text>
+                <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>{t('order.total')}</Text>
                 <Text style={{ color: '#FF7E5F', fontSize: 16, fontWeight: '800' }}>{fmtTl(sepetToplam)}</Text>
               </View>
             </ScrollView>
@@ -554,7 +556,9 @@ export default function SiparisScreen() {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <Ionicons name={sepetAcik ? 'chevron-down' : 'chevron-up'} size={18} color="#fff" />
               <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>
-                {sepetAdetToplam} ürün
+                {sepetAdetToplam === 1
+                  ? t('order.item_singular', { count: sepetAdetToplam })
+                  : t('order.item_plural', { count: sepetAdetToplam })}
               </Text>
               <Text style={{ color: '#FF7E5F', fontSize: 14, fontWeight: '800' }}>{fmtTl(sepetToplam)}</Text>
             </View>
@@ -576,7 +580,7 @@ export default function SiparisScreen() {
               ) : (
                 <>
                   <Ionicons name="checkmark-circle" size={16} color="#fff" />
-                  <Text style={{ color: '#fff', fontWeight: '800', fontSize: 13 }}>Sipariş Ver</Text>
+                  <Text style={{ color: '#fff', fontWeight: '800', fontSize: 13 }}>{t('order.place_order')}</Text>
                 </>
               )}
             </TouchableOpacity>

@@ -69,7 +69,7 @@ export default function LoginScreen() {
         nonce: hashedNonce,
       })
 
-      if (!credential.identityToken) throw new Error('Apple identity token alınamadı')
+      if (!credential.identityToken) throw new Error(t('login.apple_identity_token_failed'))
 
       const { data, error } = await supabase.auth.signInWithIdToken({
         provider: 'apple',
@@ -87,7 +87,7 @@ export default function LoginScreen() {
 
       if (!existing) {
         // Apple sadece ilk girişte ad/soyad ve email verir
-        const ad = credential.fullName?.givenName || data.user.email?.split('@')[0] || 'Kullanıcı'
+        const ad = credential.fullName?.givenName || data.user.email?.split('@')[0] || t('common.default_user_name')
         const soyad = credential.fullName?.familyName || ''
         const userEmail = credential.email || data.user.email || ''
         await supabase.from('kullanicilar').insert({
@@ -118,7 +118,7 @@ export default function LoginScreen() {
       await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true })
       const userInfo = await GoogleSignin.signIn()
       const idToken = (userInfo as any).idToken ?? (userInfo as any).data?.idToken
-      if (!idToken) throw new Error('Google ID token alınamadı')
+      if (!idToken) throw new Error(t('login.google_id_token_failed'))
 
       const { data, error } = await supabase.auth.signInWithIdToken({
         provider: 'google',
@@ -136,7 +136,7 @@ export default function LoginScreen() {
       if (!existing) {
         const fullName = (data.user.user_metadata?.full_name as string | undefined) ?? ''
         const parts = fullName.trim().split(' ')
-        const ad = parts[0] || data.user.email?.split('@')[0] || 'Kullanıcı'
+        const ad = parts[0] || data.user.email?.split('@')[0] || t('common.default_user_name')
         const soyad = parts.slice(1).join(' ')
         await supabase.from('kullanicilar').insert({
           id: data.user.id,

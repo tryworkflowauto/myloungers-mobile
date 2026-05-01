@@ -725,7 +725,7 @@ export default function TesisDetailScreen() {
         <View style={styles.loaderWrap}>
           <Text style={styles.muted}>{t('facility.not_found')}</Text>
           <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 16 }}>
-            <Text style={styles.linkBack}>Geri</Text>
+            <Text style={styles.linkBack}>{t('facility.back')}</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -1351,7 +1351,7 @@ export default function TesisDetailScreen() {
                     <Ionicons name="videocam-outline" size={18} color="#dc2626" />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.sectionTitle}>Tesis Videosu</Text>
+                    <Text style={styles.sectionTitle}>{t('facility.video_title')}</Text>
                     <Text style={{ fontSize: 11, color: '#94a3b8' }}>{t('facility.watch_promo')}</Text>
                   </View>
                 </View>

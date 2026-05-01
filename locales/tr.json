@@ -10,7 +10,8 @@
     "edit": "Düzenle",
     "back": "Geri",
     "next": "İleri",
-    "search": "Ara"
+    "search": "Ara",
+    "default_user_name": "Kullanıcı"
   },
   "login": {
     "placeholderEmail": "Kullanıcı adı / E-posta",
@@ -29,7 +30,9 @@
     "loginErrDefault": "Giriş yapılamadı. Lütfen daha sonra tekrar deneyin.",
     "loginErrOk": "Tamam",
     "appleLoginFailed": "Apple ile giriş başarısız",
-    "googleLoginFailed": "Google ile giriş başarısız"
+    "googleLoginFailed": "Google ile giriş başarısız",
+    "apple_identity_token_failed": "Apple identity token alınamadı",
+    "google_id_token_failed": "Google ID token alınamadı"
   },
   "register": {
     "tagline": "My Loungers Dünyasına",
@@ -83,6 +86,7 @@
     "working_hours_subtitle": "Haftalık açılış & kapanış",
     "closed": "Kapalı",
     "watch_promo": "Tanıtım videosunu izleyin",
+    "video_title": "Tesis Videosu",
     "select_sunbed_title": "Şezlong Seç",
     "select_sunbed_subtitle": "Uygun Şezlongu Seçin",
     "select_date": "Tarih seçin",
@@ -133,7 +137,7 @@
     "select_date_first": "Lütfen önce rezervasyon tarihini seçin.",
     "select_at_least_one": "Lütfen en az bir şezlong seçin.",
     "ok": "Tamam",
-    "back": "Geri Dön",
+    "back": "Geri",
     "search_facility": "Tesisi Ara",
     "make_reservation": "Rezervasyon Yap",
     "service_24_7": "7/24 hizmet",
@@ -188,6 +192,35 @@
     "error_create_failed": "Rezervasyon oluşturulamadı",
     "error_payment_init": "Ödeme başlatılamadı",
     "error_unexpected": "Beklenmeyen hata"
+  },
+  "order": {
+    "facility_menu": "Tesis Menüsü",
+    "all_categories": "Tümü",
+    "no_products_in_category": "Bu kategoride ürün yok",
+    "your_cart": "SEPETİNİZ",
+    "total": "Toplam",
+    "item_singular": "{{count}} ürün",
+    "item_plural": "{{count}} ürün",
+    "place_order": "Sipariş Ver",
+    "empty_cart": "Sepetiniz boş",
+    "success": "Siparişiniz alındı.",
+    "failed": "Sipariş verilemedi",
+    "create_failed": "Sipariş oluşturulamadı",
+    "checkin_required": "Önce şezlongunuzun girişini yapın (QR okutun veya kod girin).",
+    "missing_info": "Rezervasyon veya tesis bilgisi eksik.",
+    "load_failed": "Veriler yüklenemedi.",
+    "reservation_not_found": "Rezervasyon bulunamadı.",
+    "missing_parameter": "Eksik parametre.",
+    "insufficient_balance": "Harcama limitiniz yetersiz!"
+  },
+  "payment": {
+    "title": "Ödeme",
+    "session_not_found": "Ödeme oturumu bulunamadı"
+  },
+  "regions": {
+    "ege": "Ege",
+    "akdeniz": "Akdeniz",
+    "marmara": "Marmara"
   },
   "profile": {
     "welcome": "HOŞ GELDİN",
