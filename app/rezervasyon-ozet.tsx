@@ -17,6 +17,7 @@ import {
   View,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { useTranslation } from 'react-i18next'
 import { supabase } from '@/lib/supabase'
 
 const TEAL = '#0d9488'
@@ -81,13 +82,12 @@ function firstPhotoFromFotograflar(raw: unknown): string | null {
   return null
 }
 
-const STEP_LABELS = ['Özet', 'Kişi Bilgileri', 'Ödeme', 'Onay'] as const
-
 type KisiForm = { ad_soyad: string; telefon: string; email: string }
 const emptyKisi = (): KisiForm => ({ ad_soyad: '', telefon: '', email: '' })
 
 export default function RezervasyonOzet() {
   const router = useRouter()
+  const { t, i18n } = useTranslation()
   const params = useLocalSearchParams<{
     tesis_id?: string
     tesis_adi?: string
@@ -140,6 +140,16 @@ export default function RezervasyonOzet() {
     if (!raw) return []
     return String(raw).split(',').map((s) => s.trim()).filter(Boolean)
   }, [params.bekleyen_rez_ids])
+
+  const stepLabels = useMemo(
+    () => [
+      t('reservation.step_summary'),
+      t('reservation.step_personal'),
+      t('reservation.step_payment'),
+      t('reservation.step_confirm'),
+    ],
+    [t, i18n.language],
+  )
 
   // ─── Mevcut state'ler ───────────────────────────────────────────────────────
   const [kisiler, setKisiler] = useState<KisiForm[]>(() =>
@@ -295,7 +305,7 @@ export default function RezervasyonOzet() {
   }, [iptalBekleyenRez, router])
 
   const formatTl = (n: number) =>
-    `${n.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TL`
+    `${n.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${t('reservation.tl_suffix')}`
 
   // ─── Ödeme handler ───────────────────────────────────────────────────────────
   const handleOdeme = async () => {
@@ -314,15 +324,12 @@ export default function RezervasyonOzet() {
       return
     }
     if (!tarih) {
-      Alert.alert('Hata', 'Tarih bilgisi eksik.')
+      Alert.alert(t('reservation.error_title'), t('reservation.error_date_missing'))
       return
     }
 
     if (!process.env.EXPO_PUBLIC_SITE_URL) {
-      Alert.alert(
-        'Yapılandırma',
-        'Ödeme sunucusu adresi tanımlı değil. EXPO_PUBLIC_SITE_URL ortam değişkenini ayarlayın.',
-      )
+      Alert.alert(t('reservation.error_config'), t('reservation.error_config_body'))
       return
     }
 
@@ -334,7 +341,7 @@ export default function RezervasyonOzet() {
         error: userErr,
       } = await supabase.auth.getUser()
       if (userErr || !user) {
-        Alert.alert('Giriş gerekli', 'Rezervasyon için lütfen giriş yapın.')
+        Alert.alert(t('reservation.error_login_required'), t('reservation.error_login_body'))
         return
       }
 
@@ -364,7 +371,7 @@ export default function RezervasyonOzet() {
         : []
 
       if (sezlongIdList.length === 0 && bekleyenRezIds.length === 0) {
-        Alert.alert('Hata', 'Şezlong seçimi eksik.')
+        Alert.alert(t('reservation.error_title'), t('reservation.error_sunbed_missing'))
         return
       }
 
@@ -378,7 +385,7 @@ export default function RezervasyonOzet() {
           .update({ durum: 'beklemede' })
           .in('id', bekleyenRezIds)
         if (updErr) {
-          Alert.alert('Hata', 'Rezervasyon güncellenemedi.')
+          Alert.alert(t('reservation.error_title'), t('reservation.error_update_failed'))
           return
         }
         insertedIds = [...bekleyenRezIds]
@@ -416,7 +423,7 @@ export default function RezervasyonOzet() {
             .single()
 
           if (rezError || !rezData) {
-            Alert.alert('Hata', 'Rezervasyon oluşturulamadı')
+            Alert.alert(t('reservation.error_title'), t('reservation.error_create_failed'))
             return
           }
           insertedIds.push(rezData.id as string)
@@ -456,7 +463,10 @@ export default function RezervasyonOzet() {
       const sessionData = await sessionRes.json()
 
       if (!sessionData.sessionToken) {
-        Alert.alert('Hata', sessionData.error || 'Ödeme başlatılamadı')
+        Alert.alert(
+          t('reservation.error_title'),
+          sessionData.error || t('reservation.error_payment_init'),
+        )
         return
       }
 
@@ -465,7 +475,10 @@ export default function RezervasyonOzet() {
         params: { token: sessionData.sessionToken, rezervasyon_id: rezervasyonId },
       })
     } catch (e) {
-      Alert.alert('Hata', e instanceof Error ? e.message : 'Beklenmeyen hata')
+      Alert.alert(
+        t('reservation.error_title'),
+        e instanceof Error ? e.message : t('reservation.error_unexpected'),
+      )
     } finally {
       resInFlightRef.current = false
       setOdemeYukleniyor(false)
@@ -489,7 +502,7 @@ export default function RezervasyonOzet() {
           <TouchableOpacity onPress={() => void handleGeri()} hitSlop={14} style={styles.headerBtn} accessibilityRole="button">
             <Ionicons name="chevron-back" size={26} color={TEAL} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Rezervasyon Özeti</Text>
+          <Text style={styles.headerTitle}>{t('reservation.summary_title')}</Text>
           <View style={styles.headerBtn} />
         </View>
 
@@ -499,10 +512,10 @@ export default function RezervasyonOzet() {
             <Text style={styles.countdownEmoji}>⏱️</Text>
             <View style={styles.countdownTexts}>
               <Text style={[styles.countdownMain, sayacUrgent && styles.countdownMainUrgent]}>
-                {`Şezlongunuz tutuluyor: ${sayacDakika}:${sayacSaniye}`}
+                {`${t('reservation.holding_sunbed')}: ${sayacDakika}:${sayacSaniye}`}
               </Text>
               <Text style={[styles.countdownSub, sayacUrgent && styles.countdownSubUrgent]}>
-                Süre bitmeden ödemeyi tamamlayın
+                {t('reservation.complete_in_time')}
               </Text>
             </View>
           </View>
@@ -510,7 +523,7 @@ export default function RezervasyonOzet() {
 
         {/* ── Adım göstergesi ── */}
         <View style={styles.stepsBar}>
-          {STEP_LABELS.map((label, idx) => {
+          {stepLabels.map((label, idx) => {
             const stepNo = idx + 1
             const isActive = stepNo === 1
             const isDone = stepNo < 1
@@ -526,7 +539,7 @@ export default function RezervasyonOzet() {
                 <Text style={[styles.stepLabel, isActive && styles.stepLabelActive, isDone && styles.stepLabelDone]}>
                   {label}
                 </Text>
-                {idx < STEP_LABELS.length - 1 && (
+                {idx < stepLabels.length - 1 && (
                   <View style={[styles.stepLine, isDone && styles.stepLineDone]} />
                 )}
               </View>
@@ -561,10 +574,18 @@ export default function RezervasyonOzet() {
                     </View>
                   ) : null}
                   <View style={styles.sumRows}>
-                    <SumRow icon="📅" label="Tarih" value={tarih || '—'} />
-                    <SumRow icon="🛏" label="Şezlong" value={sezlong_adi || '—'} />
-                    <SumRow icon="👥" label="Kişi" value={`${kisiNum} kişi`} />
-                    <SumRow icon="📆" label="Süre" value={`${sureNum} gün`} />
+                    <SumRow icon="📅" label={t('reservation.date_label')} value={tarih || '—'} />
+                    <SumRow icon="🛏" label={t('reservation.sunbed_label')} value={sezlong_adi || '—'} />
+                    <SumRow icon="👥" label={t('reservation.guest_label')} value={t('reservation.guest_count', { count: kisiNum })} />
+                    <SumRow
+                      icon="📆"
+                      label={t('reservation.duration_label')}
+                      value={
+                        sureNum === 1
+                          ? t('reservation.day_count_singular', { count: sureNum })
+                          : t('reservation.day_count_plural', { count: sureNum })
+                      }
+                    />
                   </View>
                   <View style={styles.sumDivider} />
                   <View style={styles.sumTotalRow}>
@@ -576,17 +597,24 @@ export default function RezervasyonOzet() {
 
               {/* ── Rezervasyon detayı ── */}
               <View style={styles.card}>
-                <Text style={styles.cardTitle}>Rezervasyon detayı</Text>
-                <Row label="Tarih" value={tarih || '—'} />
-                <Row label="Şezlong" value={sezlong_adi || '—'} />
-                <Row label="Süre" value={`${sureNum} gün`} />
-                <Row label="Kişi sayısı" value={String(kisiNum)} last />
+                <Text style={styles.cardTitle}>{t('reservation.reservation_detail')}</Text>
+                <Row label={t('reservation.date_label')} value={tarih || '—'} />
+                <Row label={t('reservation.sunbed_label')} value={sezlong_adi || '—'} />
+                <Row
+                  label={t('reservation.duration_label')}
+                  value={
+                    sureNum === 1
+                      ? t('reservation.day_count_singular', { count: sureNum })
+                      : t('reservation.day_count_plural', { count: sureNum })
+                  }
+                />
+                <Row label={t('reservation.guest_count_label')} value={String(kisiNum)} last />
               </View>
 
               {/* ── Fiyat özeti ── */}
               <View style={styles.card}>
-                <Text style={styles.cardTitle}>Fiyat özeti</Text>
-                <Row label="Şezlong ücreti" value={formatTl(sezlongUcreti)} />
+                <Text style={styles.cardTitle}>{t('reservation.price_summary')}</Text>
+                <Row label={t('reservation.sunbed_fee')} value={formatTl(sezlongUcreti)} />
                 <View style={styles.totalRow}>
                   <Text style={styles.totalLabel}>Toplam</Text>
                   <Text style={styles.totalValue}>{formatTl(toplam)}</Text>
@@ -597,15 +625,17 @@ export default function RezervasyonOzet() {
               <View style={styles.iptalBox}>
                 <Text style={styles.iptalText}>
                   {'🔄 '}
-                  <Text style={styles.iptalBold}>İptal Politikası: </Text>
-                  {tesisIptalPolitikasi ?? 'Tesisin iptal politikası belirtilmemiş, lütfen tesise sorun.'}
+                  <Text style={styles.iptalBold}>{t('reservation.cancellation_policy')}: </Text>
+                  {tesisIptalPolitikasi?.trim() ? tesisIptalPolitikasi : t('reservation.default_policy')}
                 </Text>
               </View>
 
               {/* ── Kişisel bilgiler (her şezlong için ayrı form) ── */}
               {kisiler.map((kisi, index) => {
                 const sezlongAdlari = sezlong_adi.split(',')
-                const buSezlong = sezlongAdlari[index]?.trim() || `${index + 1}. Şezlong`
+                const buSezlong =
+                  sezlongAdlari[index]?.trim() ||
+                  t('reservation.sunbed_form_title', { n: index + 1 })
                 const isLast = index === kisiler.length - 1
                 return (
                   <View key={index} style={[styles.card, !isLast && { marginBottom: 0, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, borderBottomWidth: 0 }]}>
@@ -613,15 +643,17 @@ export default function RezervasyonOzet() {
                       <View style={styles.kisiAyrac} />
                     )}
                     <Text style={styles.cardTitle}>
-                      {`${index + 1}. Kişi Bilgileri`}
-                      <Text style={styles.cardTitleSub}>{`  (Şezlong: ${buSezlong})`}</Text>
+                      {`${index + 1}. ${t('reservation.personal_info_title')}`}
+                      <Text style={styles.cardTitleSub}>
+                        {`  (${t('reservation.sunbed_label')}: ${buSezlong})`}
+                      </Text>
                     </Text>
                     <Text style={styles.inputLabel}>Ad Soyad *</Text>
                     <TextInput
                       style={styles.input}
                       value={kisi.ad_soyad}
                       onChangeText={(v) => updateKisi(index, 'ad_soyad', v)}
-                      placeholder="Adınız Soyadınız"
+                      placeholder={t('reservation.full_name')}
                       placeholderTextColor="#94a3b8"
                     />
                     <Text style={styles.inputLabel}>Telefon *</Text>
@@ -629,7 +661,7 @@ export default function RezervasyonOzet() {
                       style={styles.input}
                       value={kisi.telefon}
                       onChangeText={(v) => updateKisi(index, 'telefon', v)}
-                      placeholder="05xx xxx xx xx"
+                      placeholder={t('reservation.phone_placeholder')}
                       placeholderTextColor="#94a3b8"
                       keyboardType="phone-pad"
                     />
@@ -638,7 +670,7 @@ export default function RezervasyonOzet() {
                       style={styles.input}
                       value={kisi.email}
                       onChangeText={(v) => updateKisi(index, 'email', v)}
-                      placeholder="ornek@email.com"
+                      placeholder={t('reservation.email_placeholder')}
                       placeholderTextColor="#94a3b8"
                       keyboardType="email-address"
                       autoCapitalize="none"
@@ -656,12 +688,10 @@ export default function RezervasyonOzet() {
                           <View style={[styles.kvkkBox, kvkk && styles.kvkkBoxChecked]}>
                             {kvkk && <Ionicons name="checkmark" size={13} color="#fff" />}
                           </View>
-                          <Text style={styles.kvkkText}>
-                            Kullanım Koşulları'nı ve KVKK Aydınlatma Metni'ni okudum, onaylıyorum.
-                          </Text>
+                          <Text style={styles.kvkkText}>{t('reservation.kvkk_consent')}</Text>
                         </TouchableOpacity>
                         {kvkkErr && (
-                          <Text style={styles.kvkkErrText}>Devam etmek için onay vermeniz gerekmektedir</Text>
+                          <Text style={styles.kvkkErrText}>{t('reservation.consent_required')}</Text>
                         )}
                       </>
                     )}
@@ -683,7 +713,7 @@ export default function RezervasyonOzet() {
                 {odemeYukleniyor ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <Text style={styles.payBtnText}>Ödemeye Geç</Text>
+                  <Text style={styles.payBtnText}>{t('reservation.proceed_to_payment')}</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -696,16 +726,14 @@ export default function RezervasyonOzet() {
         <View style={styles.cmBackdrop}>
           <View style={styles.cmCard}>
             <Text style={styles.cmIcon}>⚠️</Text>
-            <Text style={styles.cmTitle}>Eksik bilgi</Text>
-            <Text style={styles.cmMsg}>
-              Tüm kişilerin Ad Soyad, Telefon ve E-posta alanlarını eksiksiz doldurun.
-            </Text>
+            <Text style={styles.cmTitle}>{t('reservation.incomplete_info_title')}</Text>
+            <Text style={styles.cmMsg}>{t('reservation.incomplete_info_body')}</Text>
             <TouchableOpacity
               style={styles.cmBtn}
               activeOpacity={0.85}
               onPress={() => setEksikBilgiModal(false)}
             >
-              <Text style={styles.cmBtnText}>Tamam</Text>
+              <Text style={styles.cmBtnText}>{t('reservation.ok')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -716,10 +744,8 @@ export default function RezervasyonOzet() {
         <View style={styles.cmBackdrop}>
           <View style={styles.cmCard}>
             <Text style={styles.cmIcon}>⏰</Text>
-            <Text style={styles.cmTitle}>Süre Doldu</Text>
-            <Text style={styles.cmMsg}>
-              Rezervasyon tutma süreniz doldu. Şezlong yeniden müsait hale geldi.
-            </Text>
+            <Text style={styles.cmTitle}>{t('reservation.time_up_title')}</Text>
+            <Text style={styles.cmMsg}>{t('reservation.time_up_body')}</Text>
             <TouchableOpacity
               style={styles.cmBtn}
               activeOpacity={0.85}
@@ -728,7 +754,7 @@ export default function RezervasyonOzet() {
                 router.back()
               }}
             >
-              <Text style={styles.cmBtnText}>Tamam</Text>
+              <Text style={styles.cmBtnText}>{t('reservation.ok')}</Text>
             </TouchableOpacity>
           </View>
         </View>

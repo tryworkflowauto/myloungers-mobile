@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { Ionicons } from '@expo/vector-icons'
 import { LinearGradient } from 'expo-linear-gradient'
 import { Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
@@ -10,6 +11,7 @@ interface CallWaiterModalProps {
 }
 
 export default function CallWaiterModal({ isOpen, onClose, onConfirm, tesisAdi }: CallWaiterModalProps) {
+  const { t } = useTranslation()
   return (
     <Modal
       transparent
@@ -32,18 +34,18 @@ export default function CallWaiterModal({ isOpen, onClose, onConfirm, tesisAdi }
             </View>
 
             {/* Başlık */}
-            <Text style={styles.title}>Garson çağırılsın mı?</Text>
+            <Text style={styles.title}>{t('waiter_modal.title')}</Text>
 
             {/* Açıklama */}
-            <Text style={styles.desc}>{tesisAdi} garsonuna çağrı gönderilecek.</Text>
+            <Text style={styles.desc}>{t('waiter_modal.description', { tesisAd: tesisAdi })}</Text>
 
             {/* Butonlar */}
             <View style={styles.btnRow}>
               <TouchableOpacity style={styles.btnCancel} onPress={onClose} activeOpacity={0.8}>
-                <Text style={styles.btnCancelText}>İptal</Text>
+                <Text style={styles.btnCancelText}>{t('waiter_modal.cancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.btnConfirm} onPress={onConfirm} activeOpacity={0.85}>
-                <Text style={styles.btnConfirmText}>Çağır</Text>
+                <Text style={styles.btnConfirmText}>{t('waiter_modal.call')}</Text>
               </TouchableOpacity>
             </View>
           </LinearGradient>

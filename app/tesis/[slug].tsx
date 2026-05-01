@@ -15,12 +15,11 @@ import {
 } from 'react-native'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg'
+import { useTranslation } from 'react-i18next'
 import { supabase } from '../../lib/supabase'
 
 const SCREEN_W = Dimensions.get('window').width
 const GALLERY_MAIN_H = 240
-
-const WEEKDAY_LABELS_TR = ['P', 'S', 'Ç', 'P', 'C', 'C', 'P'] as const
 
 function sameCalendarDay(a: Date, b: Date) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
@@ -151,7 +150,7 @@ function parseImkanlarWithEmoji(raw: unknown): { name: string; emoji: string }[]
     .filter((x: { name: string; emoji: string }) => x.name)
 }
 
-function parseCalismaSaatleriLines(raw: unknown): string[] {
+function parseCalismaSaatleriLines(raw: unknown, closedLabel: string): string[] {
   if (raw == null) return []
   if (typeof raw === 'string') {
     const t = raw.trim()
@@ -168,7 +167,7 @@ function parseCalismaSaatleriLines(raw: unknown): string[] {
         const obj = item as Record<string, unknown>
         const name = String(obj.name ?? '')
         const kapali = obj.kapali === true
-        if (kapali) return `${name}: Kapalı`
+        if (kapali) return `${name}: ${closedLabel}`
         const acilis = String(obj.acilis ?? '')
         const kapanis = String(obj.kapanis ?? '')
         const vurgu = obj.vurgu === true ? ' ⭐' : ''
@@ -279,6 +278,14 @@ function paramSlug(slug: string | string[] | undefined): string {
 
 export default function TesisDetailScreen() {
   const router = useRouter()
+  const { t, i18n } = useTranslation()
+  const weekdayShortLabels = useMemo((): readonly string[] => {
+    const raw = t('facility.weekday_short', { returnObjects: true }) as unknown
+    if (Array.isArray(raw) && raw.length === 7 && raw.every((x) => typeof x === 'string')) {
+      return raw as string[]
+    }
+    return ['P', 'S', 'Ç', 'P', 'C', 'C', 'P']
+  }, [t, i18n.language])
   const insets = useSafeAreaInsets()
   const { slug: slugParam } = useLocalSearchParams<{ slug: string }>()
   const slug = paramSlug(slugParam)
@@ -645,7 +652,7 @@ export default function TesisDetailScreen() {
 
   const photoUrls = row ? parsePhotoSrcs(row.fotograflar) : []
   const imkanList = row ? parseImkanlarWithEmoji(row.imkanlar) : []
-  const calismaLines = row ? parseCalismaSaatleriLines(row.calisma_saatleri) : []
+  const calismaLines = row ? parseCalismaSaatleriLines(row.calisma_saatleri, t('facility.closed')) : []
   const tesisVideoUrlTrimmed = useMemo(() => row?.video_url?.trim() || null, [row?.video_url])
   const ulasimFields = useMemo(() => {
     if (row?.ulasim == null) return null
@@ -716,7 +723,7 @@ export default function TesisDetailScreen() {
     return (
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <View style={styles.loaderWrap}>
-          <Text style={styles.muted}>Tesis bulunamadı</Text>
+          <Text style={styles.muted}>{t('facility.not_found')}</Text>
           <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 16 }}>
             <Text style={styles.linkBack}>Geri</Text>
           </TouchableOpacity>
@@ -830,10 +837,12 @@ export default function TesisDetailScreen() {
               }}
             >
               <Ionicons name="checkmark-circle" size={13} color="#16a34a" />
-              <Text style={{ color: '#16a34a', fontWeight: '700', fontSize: 12 }}>Doğrulandı</Text>
+              <Text style={{ color: '#16a34a', fontWeight: '700', fontSize: 12 }}>{t('facility.verified')}</Text>
             </View>
           </View>
-          <Text style={{ fontSize: 13, color: '#64748b', marginBottom: 8 }}>{yorumSayisi} değerlendirme</Text>
+          <Text style={{ fontSize: 13, color: '#64748b', marginBottom: 8 }}>
+            {t('facility.review_count', { count: yorumSayisi })}
+          </Text>
 
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
@@ -866,7 +875,7 @@ export default function TesisDetailScreen() {
                 }}
               >
                 <Ionicons name="location-sharp" size={13} color="#fff" />
-                <Text style={{ fontSize: 12, color: '#fff', fontWeight: '600' }}>Haritada gör</Text>
+                <Text style={{ fontSize: 12, color: '#fff', fontWeight: '600' }}>{t('facility.view_on_map')}</Text>
               </TouchableOpacity>
             ) : null}
           </View>
@@ -891,7 +900,7 @@ export default function TesisDetailScreen() {
                   <Ionicons name="location-outline" size={18} color="#ef4444" />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.sectionTitle}>Tesis Hakkında</Text>
+                  <Text style={styles.sectionTitle}>{t('facility.about_title')}</Text>
                   <Text style={{ fontSize: 11, color: '#94a3b8' }}>{row?.ad ?? ''}</Text>
                 </View>
               </View>
@@ -921,7 +930,7 @@ export default function TesisDetailScreen() {
                 {!row.kisa_aciklama?.trim() &&
                 !row.detayli_aciklama?.trim() &&
                 !row.aciklama?.trim() ? (
-                  <Text style={styles.bodyText}>Henüz açıklama eklenmemiş.</Text>
+                  <Text style={styles.bodyText}>{t('facility.no_description')}</Text>
                 ) : null}
               </View>
             )}
@@ -948,8 +957,8 @@ export default function TesisDetailScreen() {
                     <Ionicons name="star-outline" size={18} color="#eab308" />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.sectionTitle}>Tesis İmkânları</Text>
-                    <Text style={{ fontSize: 11, color: '#94a3b8' }}>Öne çıkan özellikler</Text>
+                    <Text style={styles.sectionTitle}>{t('facility.amenities_title')}</Text>
+                    <Text style={{ fontSize: 11, color: '#94a3b8' }}>{t('facility.amenities_subtitle')}</Text>
                   </View>
                 </View>
                 <Ionicons name={acikImkanlar ? 'chevron-up' : 'chevron-down'} size={20} color="#94a3b8" />
@@ -1001,8 +1010,8 @@ export default function TesisDetailScreen() {
                     <Ionicons name="time-outline" size={18} color="#f97316" />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.sectionTitle}>Çalışma Saatleri</Text>
-                    <Text style={{ fontSize: 11, color: '#94a3b8' }}>Haftalık açılış & kapanış</Text>
+                    <Text style={styles.sectionTitle}>{t('facility.working_hours_title')}</Text>
+                    <Text style={{ fontSize: 11, color: '#94a3b8' }}>{t('facility.working_hours_subtitle')}</Text>
                   </View>
                 </View>
                 <Ionicons name={acikSaatler ? 'chevron-up' : 'chevron-down'} size={20} color="#94a3b8" />
@@ -1046,8 +1055,8 @@ export default function TesisDetailScreen() {
                       <Ionicons name="grid-outline" size={18} color="#fff" />
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.sectionTitle, { color: '#fff' }]}>Şezlong Seç</Text>
-                      <Text style={{ fontSize: 11, color: '#fff' }}>Uygun Şezlongu Seçin</Text>
+                      <Text style={[styles.sectionTitle, { color: '#fff' }]}>{t('facility.select_sunbed_title')}</Text>
+                      <Text style={{ fontSize: 11, color: '#fff' }}>{t('facility.select_sunbed_subtitle')}</Text>
                     </View>
                   </View>
                   <Ionicons name={acikPlan ? 'chevron-up' : 'chevron-down'} size={20} color="#fff" />
@@ -1072,7 +1081,7 @@ export default function TesisDetailScreen() {
                 <Text style={{ fontSize: 14, color: '#fff', fontWeight: '700' }}>
                   {secilenTarih
                     ? secilenTarih.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })
-                    : 'Tarih seçin'}
+                    : t('facility.select_date')}
                 </Text>
                 <Ionicons name="chevron-down" size={16} color="#fff" />
               </TouchableOpacity>
@@ -1087,16 +1096,16 @@ export default function TesisDetailScreen() {
                 }}
               >
                 {[
-                  { renk: '#22c55e', label: 'Boş' },
-                  { renk: '#f97316', label: 'Dolu' },
-                  { renk: '#3b82f6', label: 'Rezerve' },
-                  { renk: '#94a3b8', label: 'Bakım' },
-                  { renk: '#7c3aed', label: 'Kilitli' },
-                  { renk: '#0ABAB5', label: 'Seçimim' },
+                  { renk: '#22c55e', legendKey: 'legend_available' as const },
+                  { renk: '#f97316', legendKey: 'legend_occupied' as const },
+                  { renk: '#3b82f6', legendKey: 'legend_reserved' as const },
+                  { renk: '#94a3b8', legendKey: 'legend_maintenance' as const },
+                  { renk: '#7c3aed', legendKey: 'legend_locked' as const },
+                  { renk: '#0ABAB5', legendKey: 'legend_my_selection' as const },
                 ].map((item) => (
-                  <View key={item.label} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <View key={item.legendKey} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                     <View style={{ width: 12, height: 12, borderRadius: 3, backgroundColor: item.renk }} />
-                    <Text style={{ fontSize: 10, color: '#64748b' }}>{item.label}</Text>
+                    <Text style={{ fontSize: 10, color: '#64748b' }}>{t(`facility.${item.legendKey}`)}</Text>
                   </View>
                 ))}
               </View>
@@ -1141,7 +1150,7 @@ export default function TesisDetailScreen() {
                       letterSpacing: 5,
                     }}
                   >
-                    ~ D E N İ Z ~
+                    {t('facility.sea_label')}
                   </Text>
                 </View>
               </View>
@@ -1149,8 +1158,8 @@ export default function TesisDetailScreen() {
               {/* Kişi sayısı seçici */}
               <View style={styles.paxRow}>
                 <View style={styles.paxLabelWrap}>
-                  <Text style={styles.paxLabel}>👥 Kişi Sayısı</Text>
-                  <Text style={styles.paxSub}>Maks. 5 · Her kişi 1 şezlong</Text>
+                  <Text style={styles.paxLabel}>{'👥 '}{t('facility.guest_count')}</Text>
+                  <Text style={styles.paxSub}>{t('facility.max_guests')}</Text>
                 </View>
                 <View style={styles.paxControls}>
                   <TouchableOpacity
@@ -1217,15 +1226,17 @@ export default function TesisDetailScreen() {
                       <View style={{ alignItems: 'flex-end', gap: 4 }}>
                         {fiyat != null && (
                           <Text style={{ fontSize: 12, color: '#fff', opacity: 0.9 }}>
-                            ₺{fiyat.toLocaleString('tr-TR')} / gün
+                            {t('facility.price_per_day', { price: fiyat.toLocaleString('tr-TR') })}
                           </Text>
                         )}
                         <View style={{ alignItems: 'flex-end' }}>
                           <Text style={{ fontSize: 11, color: '#fff', fontWeight: '700' }}>
-                            {toplamSezlong} şezlong
+                            {toplamSezlong === 1
+                              ? t('facility.sunbed_singular', { count: toplamSezlong })
+                              : t('facility.sunbed_plural', { count: toplamSezlong })}
                           </Text>
                           <Text style={{ fontSize: 10, color: '#fff', opacity: 0.85 }}>
-                            {dolulukYuzde}% Dolu
+                            {t('facility.occupancy_percent', { percent: dolulukYuzde })}
                           </Text>
                         </View>
                       </View>
@@ -1307,7 +1318,10 @@ export default function TesisDetailScreen() {
               {secilenSezlongIds.size > 0 && (
                 <View style={{ backgroundColor: '#f0fdfa', borderRadius: 10, padding: 12, marginTop: 8 }}>
                   <Text style={{ fontSize: 14, color: '#0ABAB5', fontWeight: '700', textAlign: 'center' }}>
-                    {secilenSezlongIds.size} şezlong seçildi
+                    {t('facility.sunbeds_selected', {
+                      count: secilenSezlongIds.size,
+                      suffix: i18n.language?.startsWith('en') && secilenSezlongIds.size !== 1 ? 's' : '',
+                    })}
                   </Text>
                 </View>
               )}
@@ -1338,7 +1352,7 @@ export default function TesisDetailScreen() {
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.sectionTitle}>Tesis Videosu</Text>
-                    <Text style={{ fontSize: 11, color: '#94a3b8' }}>Tanıtım videosunu izleyin</Text>
+                    <Text style={{ fontSize: 11, color: '#94a3b8' }}>{t('facility.watch_promo')}</Text>
                   </View>
                 </View>
                 <Ionicons name={acikVideo ? 'chevron-up' : 'chevron-down'} size={20} color="#94a3b8" />
@@ -1388,8 +1402,8 @@ export default function TesisDetailScreen() {
                     <Ionicons name="bus-outline" size={18} color="#2563eb" />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.sectionTitle}>Ulaşım Rehberi</Text>
-                    <Text style={{ fontSize: 11, color: '#94a3b8' }}>Dolmuş & Taksi</Text>
+                    <Text style={styles.sectionTitle}>{t('facility.transportation')}</Text>
+                    <Text style={{ fontSize: 11, color: '#94a3b8' }}>{t('facility.dolmus_taxi')}</Text>
                   </View>
                 </View>
                 <Ionicons name={acikUlasim ? 'chevron-up' : 'chevron-down'} size={20} color="#94a3b8" />
@@ -1420,13 +1434,13 @@ export default function TesisDetailScreen() {
                         >
                           <Ionicons name="car-outline" size={18} color="#2563eb" />
                         </View>
-                        <Text style={{ fontSize: 13, fontWeight: '800', color: '#0A1628', flex: 1 }}>Taksi</Text>
+                        <Text style={{ fontSize: 13, fontWeight: '800', color: '#0A1628', flex: 1 }}>{t('facility.taxi')}</Text>
                       </View>
                       {ulasimFields.merkeze ? (
                         <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 10 }}>
                           <Ionicons name="location-outline" size={16} color="#64748b" style={{ marginTop: 2 }} />
                           <View style={{ flex: 1 }}>
-                            <Text style={{ fontSize: 11, color: '#94a3b8', marginBottom: 2 }}>Merkeze Uzaklık</Text>
+                            <Text style={{ fontSize: 11, color: '#94a3b8', marginBottom: 2 }}>{t('facility.distance_center')}</Text>
                             <Text style={{ fontSize: 12, color: '#334155' }}>{ulasimFields.merkeze}</Text>
                           </View>
                         </View>
@@ -1435,7 +1449,7 @@ export default function TesisDetailScreen() {
                         <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 10 }}>
                           <Ionicons name="airplane-outline" size={16} color="#64748b" style={{ marginTop: 2 }} />
                           <View style={{ flex: 1 }}>
-                            <Text style={{ fontSize: 11, color: '#94a3b8', marginBottom: 2 }}>Havalimanına Uzaklık</Text>
+                            <Text style={{ fontSize: 11, color: '#94a3b8', marginBottom: 2 }}>{t('facility.distance_airport')}</Text>
                             <Text style={{ fontSize: 12, color: '#334155' }}>{ulasimFields.havalimani}</Text>
                           </View>
                         </View>
@@ -1444,7 +1458,7 @@ export default function TesisDetailScreen() {
                         <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 10 }}>
                           <Ionicons name="call-outline" size={16} color="#64748b" style={{ marginTop: 2 }} />
                           <View style={{ flex: 1 }}>
-                            <Text style={{ fontSize: 11, color: '#94a3b8', marginBottom: 2 }}>Taksi Telefon</Text>
+                            <Text style={{ fontSize: 11, color: '#94a3b8', marginBottom: 2 }}>{t('facility.taxi_phone')}</Text>
                             <Text style={{ fontSize: 12, color: '#334155' }}>{ulasimFields.tel1}</Text>
                           </View>
                         </View>
@@ -1461,7 +1475,7 @@ export default function TesisDetailScreen() {
                           marginTop: 2,
                         }}
                       >
-                        <Text style={{ fontSize: 11, fontWeight: '700', color: '#b45309' }}>7/24 hizmet</Text>
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: '#b45309' }}>{t('facility.service_24_7')}</Text>
                       </View>
                     </View>
                     <View
@@ -1487,13 +1501,13 @@ export default function TesisDetailScreen() {
                         >
                           <Ionicons name="bus-outline" size={18} color="#2563eb" />
                         </View>
-                        <Text style={{ fontSize: 13, fontWeight: '800', color: '#0A1628', flex: 1 }}>Dolmuş</Text>
+                        <Text style={{ fontSize: 13, fontWeight: '800', color: '#0A1628', flex: 1 }}>{t('facility.dolmus')}</Text>
                       </View>
                       {ulasimFields.hat ? (
                         <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 10 }}>
                           <Ionicons name="navigate-outline" size={16} color="#64748b" style={{ marginTop: 2 }} />
                           <View style={{ flex: 1 }}>
-                            <Text style={{ fontSize: 11, color: '#94a3b8', marginBottom: 2 }}>Hat / Güzergah</Text>
+                            <Text style={{ fontSize: 11, color: '#94a3b8', marginBottom: 2 }}>{t('facility.route')}</Text>
                             <Text style={{ fontSize: 12, color: '#334155' }}>{ulasimFields.hat}</Text>
                           </View>
                         </View>
@@ -1502,7 +1516,7 @@ export default function TesisDetailScreen() {
                         <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 10 }}>
                           <Ionicons name="time-outline" size={16} color="#64748b" style={{ marginTop: 2 }} />
                           <View style={{ flex: 1 }}>
-                            <Text style={{ fontSize: 11, color: '#94a3b8', marginBottom: 2 }}>Sefer Saatleri</Text>
+                            <Text style={{ fontSize: 11, color: '#94a3b8', marginBottom: 2 }}>{t('facility.schedule_hours')}</Text>
                             <Text style={{ fontSize: 12, color: '#334155' }}>
                               {ulasimFields.saatBas && ulasimFields.saatBit
                                 ? `${ulasimFields.saatBas} – ${ulasimFields.saatBit}`
@@ -1515,7 +1529,7 @@ export default function TesisDetailScreen() {
                         <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 10 }}>
                           <Ionicons name="pin-outline" size={16} color="#64748b" style={{ marginTop: 2 }} />
                           <View style={{ flex: 1 }}>
-                            <Text style={{ fontSize: 11, color: '#94a3b8', marginBottom: 2 }}>İniş noktası</Text>
+                            <Text style={{ fontSize: 11, color: '#94a3b8', marginBottom: 2 }}>{t('facility.dropoff_point')}</Text>
                             <Text style={{ fontSize: 12, color: '#334155' }}>{ulasimFields.durak}</Text>
                           </View>
                         </View>
@@ -1524,7 +1538,7 @@ export default function TesisDetailScreen() {
                         <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
                           <Ionicons name="pencil-outline" size={16} color="#64748b" style={{ marginTop: 2 }} />
                           <View style={{ flex: 1 }}>
-                            <Text style={{ fontSize: 11, color: '#94a3b8', marginBottom: 2 }}>Not</Text>
+                            <Text style={{ fontSize: 11, color: '#94a3b8', marginBottom: 2 }}>{t('facility.note')}</Text>
                             <Text style={{ fontSize: 12, color: '#334155' }}>{ulasimFields.not}</Text>
                           </View>
                         </View>
@@ -1557,8 +1571,8 @@ export default function TesisDetailScreen() {
                     <Ionicons name="information-circle-outline" size={18} color="#f97316" />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.sectionTitle}>Bilinmesi Gerekenler</Text>
-                    <Text style={{ fontSize: 11, color: '#94a3b8' }}>Kurallar & Kampanyalar</Text>
+                    <Text style={styles.sectionTitle}>{t('facility.must_know')}</Text>
+                    <Text style={{ fontSize: 11, color: '#94a3b8' }}>{t('facility.rules_campaigns')}</Text>
                   </View>
                 </View>
                 <Ionicons name={acikBilinmesi ? 'chevron-up' : 'chevron-down'} size={20} color="#94a3b8" />
@@ -1577,7 +1591,7 @@ export default function TesisDetailScreen() {
                           textTransform: 'uppercase',
                         }}
                       >
-                        KURALLAR
+                        {t('facility.rules_section')}
                       </Text>
                       {kurallarItems.map((item, i) => (
                         <View
@@ -1607,7 +1621,7 @@ export default function TesisDetailScreen() {
                           textTransform: 'uppercase',
                         }}
                       >
-                        KAMPANYALAR
+                        {t('facility.campaigns_section')}
                       </Text>
                       {kampanyaItems.map((item, i) => (
                         <View
@@ -1650,9 +1664,12 @@ export default function TesisDetailScreen() {
                   <Ionicons name="restaurant-outline" size={18} color="#7c3aed" />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.sectionTitle}>Menü</Text>
+                  <Text style={styles.sectionTitle}>{t('facility.menu')}</Text>
                   <Text style={{ fontSize: 11, color: '#94a3b8' }} numberOfLines={1}>
-                    {menuUrunler.length} ürün · {menuKategoriler.length} kategori
+                    {t('facility.menu_summary', {
+                      products: menuUrunler.length,
+                      categories: menuKategoriler.length,
+                    })}
                   </Text>
                 </View>
               </View>
@@ -1661,7 +1678,7 @@ export default function TesisDetailScreen() {
             {acikMenu && (
               <View style={{ marginTop: 12 }}>
                 {menuUrunler.length === 0 ? (
-                  <Text style={{ fontSize: 14, color: '#64748b', textAlign: 'center' }}>Menü bulunamadı</Text>
+                  <Text style={{ fontSize: 14, color: '#64748b', textAlign: 'center' }}>{t('facility.menu_not_found')}</Text>
                 ) : (
                   <>
                     <ScrollView
@@ -1687,7 +1704,7 @@ export default function TesisDetailScreen() {
                             color: menuSeciliKategori === 'all' ? '#ffffff' : '#64748b',
                           }}
                         >
-                          Tümü
+                          {t('facility.all_filter')}
                         </Text>
                       </TouchableOpacity>
                       {menuKategoriler.map((k) => {
@@ -1808,9 +1825,9 @@ export default function TesisDetailScreen() {
                   <Ionicons name="star-outline" size={18} color="#f59e0b" />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.sectionTitle}>Kullanıcı Yorumları</Text>
+                  <Text style={styles.sectionTitle}>{t('facility.user_reviews')}</Text>
                   <Text style={{ fontSize: 11, color: '#94a3b8' }} numberOfLines={1}>
-                    {yorumlarList.length} değerlendirme
+                    {t('facility.review_count', { count: yorumlarList.length })}
                   </Text>
                 </View>
               </View>
@@ -1819,7 +1836,7 @@ export default function TesisDetailScreen() {
             {acikYorumlar && (
               <View style={{ marginTop: 12 }}>
                 {yorumlarList.length === 0 ? (
-                  <Text style={{ fontSize: 14, color: '#64748b', textAlign: 'center' }}>Henüz yorum yok</Text>
+                  <Text style={{ fontSize: 14, color: '#64748b', textAlign: 'center' }}>{t('facility.no_reviews')}</Text>
                 ) : (
                   <>
                     <View style={{ marginBottom: 16 }}>
@@ -1839,17 +1856,17 @@ export default function TesisDetailScreen() {
                         </View>
                       </View>
                       <Text style={{ fontSize: 12, color: '#64748b', marginBottom: 12 }}>
-                        {yorumlarList.length} yorum
+                        {t('facility.review_count_short', { count: yorumlarList.length })}
                       </Text>
                       {(
                         [
-                          { label: 'Konum', v: yorumOzet.konum },
-                          { label: 'Temizlik', v: yorumOzet.temizlik },
-                          { label: 'Hizmet', v: yorumOzet.hizmet },
-                          { label: 'Fiyat/Değer', v: yorumOzet.fiyat },
+                          { labelKey: 'rating_location', v: yorumOzet.konum },
+                          { labelKey: 'rating_cleanliness', v: yorumOzet.temizlik },
+                          { labelKey: 'rating_service', v: yorumOzet.hizmet },
+                          { labelKey: 'rating_value', v: yorumOzet.fiyat },
                         ] as const
                       ).map((rowBar) => (
-                        <View key={rowBar.label} style={{ marginBottom: 8 }}>
+                        <View key={rowBar.labelKey} style={{ marginBottom: 8 }}>
                           <View
                             style={{
                               flexDirection: 'row',
@@ -1858,7 +1875,9 @@ export default function TesisDetailScreen() {
                               marginBottom: 4,
                             }}
                           >
-                            <Text style={{ fontSize: 11, color: '#64748b', fontWeight: '600' }}>{rowBar.label}</Text>
+                            <Text style={{ fontSize: 11, color: '#64748b', fontWeight: '600' }}>
+                              {t(`facility.${rowBar.labelKey}`)}
+                            </Text>
                             <Text style={{ fontSize: 11, color: '#0A1628', fontWeight: '700' }}>
                               {rowBar.v != null ? rowBar.v.toFixed(1) : '—'}
                             </Text>
@@ -1907,7 +1926,7 @@ export default function TesisDetailScreen() {
                                 borderRadius: 6,
                               }}
                             >
-                              <Text style={{ fontSize: 10, fontWeight: '700', color: '#15803d' }}>Doğrulanmış</Text>
+                              <Text style={{ fontSize: 10, fontWeight: '700', color: '#15803d' }}>{t('facility.verified_review')}</Text>
                             </View>
                           ) : null}
                           <Text style={{ fontSize: 11, color: '#94a3b8', marginLeft: 'auto' }}>
@@ -1941,7 +1960,7 @@ export default function TesisDetailScreen() {
                             }}
                           >
                             <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748b', marginBottom: 4 }}>
-                              İşletme Yanıtı:
+                              {t('facility.business_response')}:
                             </Text>
                             <Text style={{ fontSize: 12, color: '#475569' }}>{y.isletme_cevabi}</Text>
                           </View>
@@ -1969,7 +1988,7 @@ export default function TesisDetailScreen() {
               </TouchableOpacity>
             </View>
             <View style={styles.calendarWeekdayRow}>
-              {WEEKDAY_LABELS_TR.map((label, wi) => (
+              {weekdayShortLabels.map((label, wi) => (
                 <Text key={wi} style={styles.calendarWeekdayCell}>
                   {label}
                 </Text>
@@ -2030,10 +2049,10 @@ export default function TesisDetailScreen() {
                 onPress={() => setShowPlanDatePicker(false)}
                 activeOpacity={0.85}
               >
-                <Text style={styles.calendarBtnCancelText}>İPTAL</Text>
+                <Text style={styles.calendarBtnCancelText}>{t('facility.cancel_calendar')}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.calendarBtnOk} onPress={onPlanCalendarConfirm} activeOpacity={0.85}>
-                <Text style={styles.calendarBtnOkText}>TAMAM</Text>
+                <Text style={styles.calendarBtnOkText}>{t('facility.ok')}</Text>
               </TouchableOpacity>
             </View>
           </SafeAreaView>
@@ -2072,7 +2091,7 @@ export default function TesisDetailScreen() {
               textAlign: 'center',
             }}
           >
-            {'L\u00fctfen \u00f6nce tarih se\u00e7iniz'}
+            {t('facility.please_select_date')}
           </Text>
         </View>
       ) : null}
@@ -2082,16 +2101,14 @@ export default function TesisDetailScreen() {
         <View style={styles.paxModalBackdrop}>
           <View style={styles.paxModalCard}>
             <Text style={styles.paxModalIcon}>⚠️</Text>
-            <Text style={styles.paxModalTitle}>Uyarı</Text>
-            <Text style={styles.paxModalMsg}>
-              {`Maksimum ${paxCount} şezlong seçebilirsiniz.\nKişi sayısını artırmak için + butonunu kullanın.`}
-            </Text>
+            <Text style={styles.paxModalTitle}>{t('facility.warning')}</Text>
+            <Text style={styles.paxModalMsg}>{t('facility.multi_sunbed_message')}</Text>
             <TouchableOpacity
               style={styles.paxModalBtn}
               activeOpacity={0.85}
               onPress={() => setPaxUyariVisible(false)}
             >
-              <Text style={styles.paxModalBtnText}>Tamam</Text>
+              <Text style={styles.paxModalBtnText}>{t('facility.ok')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -2102,14 +2119,14 @@ export default function TesisDetailScreen() {
         <View style={styles.paxModalBackdrop}>
           <View style={styles.paxModalCard}>
             <Text style={styles.paxModalIcon}>⚠️</Text>
-            <Text style={styles.paxModalTitle}>Eksik Bilgi</Text>
+            <Text style={styles.paxModalTitle}>{t('facility.incomplete_info')}</Text>
             <Text style={styles.paxModalMsg}>{validUyariMesaj}</Text>
             <TouchableOpacity
               style={styles.paxModalBtn}
               activeOpacity={0.85}
               onPress={() => setValidUyariVisible(false)}
             >
-              <Text style={styles.paxModalBtnText}>Tamam</Text>
+              <Text style={styles.paxModalBtnText}>{t('facility.ok')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -2122,10 +2139,10 @@ export default function TesisDetailScreen() {
             activeOpacity={0.9}
             onPress={() => router.back()}
             accessibilityRole="button"
-            accessibilityLabel="Geri Dön"
+            accessibilityLabel={t('facility.back')}
           >
             <Ionicons name="arrow-back-outline" size={18} color="#fff" />
-            <Text style={styles.stickyBackBtnText}>Geri Dön</Text>
+            <Text style={styles.stickyBackBtnText}>{t('facility.back')}</Text>
           </TouchableOpacity>
           {(() => {
             const telNum = (row.iletisim_numarasi?.trim() || row.telefon?.trim()) ?? ''
@@ -2140,10 +2157,10 @@ export default function TesisDetailScreen() {
                   void Linking.openURL(`tel:${telNum.replace(/[\s\-\(\)]/g, '')}`)
                 }}
                 accessibilityRole="button"
-                accessibilityLabel="Tesisi Ara"
+                accessibilityLabel={t('facility.search_facility')}
               >
                 <Ionicons name="call-outline" size={18} color="#fff" />
-                <Text style={styles.stickyCallBtnText}>Tesisi Ara</Text>
+                <Text style={styles.stickyCallBtnText}>{t('facility.search_facility')}</Text>
               </TouchableOpacity>
             )
           })()}
@@ -2155,7 +2172,7 @@ export default function TesisDetailScreen() {
               if (rezButtonLoading) return
 
               if (!secilenTarih) {
-                setValidUyariMesaj('Lütfen önce rezervasyon tarihini seçin.')
+                setValidUyariMesaj(t('facility.select_date_first'))
                 setValidUyariVisible(true)
                 setAcikPlan(true)
                 scrollViewRef.current?.scrollTo({
@@ -2167,7 +2184,7 @@ export default function TesisDetailScreen() {
               }
 
               if (secilenSezlongIds.size === 0) {
-                setValidUyariMesaj('Lütfen en az bir şezlong seçin.')
+                setValidUyariMesaj(t('facility.select_at_least_one'))
                 setValidUyariVisible(true)
                 setAcikPlan(true)
                 scrollViewRef.current?.scrollTo({
@@ -2275,7 +2292,7 @@ export default function TesisDetailScreen() {
             {rezButtonLoading ? (
               <ActivityIndicator size="small" color="#fff" />
             ) : (
-              <Text style={styles.stickyReserveBtnText}>Rezervasyon Yap</Text>
+              <Text style={styles.stickyReserveBtnText}>{t('facility.make_reservation')}</Text>
             )}
           </TouchableOpacity>
         </View>

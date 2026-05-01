@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router'
 import { useCallback, useState } from 'react'
 import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { useTranslation } from 'react-i18next'
 import { supabase } from '@/lib/supabase'
 
 type FavoriRow = {
@@ -21,6 +22,7 @@ type FavoriRow = {
 
 export default function FavoritesScreen() {
   const router = useRouter()
+  const { t } = useTranslation()
   const [loading, setLoading] = useState(true)
   const [favoriler, setFavoriler] = useState<FavoriRow[]>([])
   const [userId, setUserId] = useState<string | null>(null)
@@ -63,7 +65,7 @@ export default function FavoritesScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Favorilerim</Text>
+        <Text style={styles.headerTitle}>{t('favorites.title')}</Text>
       </View>
 
       {loading ? (
@@ -73,7 +75,7 @@ export default function FavoritesScreen() {
       ) : favoriler.length === 0 ? (
         <View style={styles.emptyWrap}>
           <Ionicons name="heart-outline" size={46} color="#94a3b8" />
-          <Text style={styles.emptyText}>Henüz favori tesisiniz yok.</Text>
+          <Text style={styles.emptyText}>{t('favorites.empty')}</Text>
         </View>
       ) : (
         <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>

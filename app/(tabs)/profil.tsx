@@ -8,6 +8,8 @@ import * as Clipboard from 'expo-clipboard'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useFocusEffect, useRouter } from 'expo-router'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import i18n from 'i18next'
 import {
     ActivityIndicator,
     Alert,
@@ -42,7 +44,7 @@ type ProfilKullanici = {
   email: string
   telefon: string
   sehir: string
-  uyeAyYil: string
+  memberSinceIso: string
   eposta_dogrulandi: boolean
 }
 
@@ -83,19 +85,11 @@ type RezRow = {
   iptalEdilebilirMiHesap: { edilebilir: boolean; kalanSaat: number; gerekenSaat: number }
 }
 
-function formatUyeAyYil(iso: string) {
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
-  const ay = d.toLocaleDateString('tr-TR', { month: 'long' })
-  const yil = d.getFullYear()
-  const ayCap = ay ? ay.charAt(0).toLocaleUpperCase('tr-TR') + ay.slice(1) : ''
-  return `${ayCap} ${yil}`
-}
-
 function formatRezTarih(iso: string) {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
-  return d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })
+  const loc = i18n.language?.startsWith('tr') ? 'tr-TR' : 'en-US'
+  return d.toLocaleDateString(loc, { day: 'numeric', month: 'long', year: 'numeric' })
 }
 
 const TR_DAYS = ['Paz', 'Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt']
@@ -155,18 +149,18 @@ function formatTutar(raw: number | string | null | undefined) {
 function formatSure(saniye: number): string {
   const dk = Math.floor(saniye / 60)
   const sn = saniye % 60
-  if (dk === 0) return `${sn} sn`
-  if (sn === 0) return `${dk} dk`
-  return `${dk} dk ${sn} sn`
+  if (dk === 0) return `${sn} ${i18n.t('profile.sec_short')}`
+  if (sn === 0) return `${dk} ${i18n.t('profile.min_short')}`
+  return `${dk} ${i18n.t('profile.min_short')} ${sn} ${i18n.t('profile.sec_short')}`
 }
 
 function formatZamanOnce(createdAt: Date | string): string {
   const diff = Date.now() - new Date(createdAt).getTime()
   const dk = Math.floor(diff / 60000)
   const sa = Math.floor(dk / 60)
-  if (sa > 0) return `${sa} sa önce`
-  if (dk > 0) return `${dk} dk önce`
-  return 'Az önce'
+  if (sa > 0) return i18n.t('profile.hour_ago', { count: sa })
+  if (dk > 0) return i18n.t('profile.min_ago', { count: dk })
+  return i18n.t('profile.just_now')
 }
 
 function getTesisAdFromRez(rezervasyonId: any, rezervasyonlar: any[]): string {
@@ -196,13 +190,14 @@ function aktifSezlongSureStr(r: { baslangic_tarih?: string; bitis_tarih?: string
   const d1 = new Date(r.bitis_tarih)
   if (Number.isNaN(d0.getTime()) || Number.isNaN(d1.getTime())) return '—'
   const diff = Math.round((d1.getTime() - d0.getTime()) / (1000 * 60 * 60 * 24))
-  return `${Math.max(1, diff)} gün`
+  const count = Math.max(1, diff)
+  return i18n.t('profile.day', { count })
 }
 
 function rezDurumLabel(d: RezDurum): string {
   const labels: Record<RezDurum, string> = {
     yaklasan: 'Yaklaşan',
-    aktif: 'Aktif',
+    aktif: i18n.t('profile.active'),
     gecmis: 'Geçmiş',
     iptal: 'İptal',
   }
@@ -236,6 +231,7 @@ type RezFilter = 'tum' | RezDurum
 
 export default function ProfilScreen() {
   const router = useRouter()
+  const { t, i18n } = useTranslation()
   const [altSekme, setAltSekme] = useState<AltSekme>('rezervasyonlar')
   const [rezFilter, setRezFilter] = useState<RezFilter>('tum')
   const [loading, setLoading] = useState(true)
@@ -329,21 +325,21 @@ export default function ProfilScreen() {
       if (!cameraPermission?.granted) {
         const res = await requestCameraPermission()
         if (!res.granted) {
-          Alert.alert('\u0130zin gerekli', 'QR kod okutmak i\u00e7in kamera eri\u015fimine izin verin.')
+          Alert.alert(t('profile.permission_required'), t('profile.camera_permission'))
           return
         }
       }
       qrHandledRef.current = false
       setShowQrScanner(true)
     } catch {
-      Alert.alert('Yak\u0131nda', 'QR okuyucu yak\u0131nda aktif olacak')
+      Alert.alert(t('profile.coming_soon'), t('profile.coming_soon_hint'))
     }
   }
 
   const handleKodOnayla = async () => {
     const raw = kodInput.trim().toUpperCase()
     if (!raw) {
-      setKodHata('Ge\u00e7ersiz kod')
+      setKodHata(t('profile.invalid_code'))
       return
     }
     setKodGonderiliyor(true)
@@ -367,7 +363,7 @@ export default function ProfilScreen() {
         .single()
 
       if (rezErr || !rezData) {
-        setKodHata('Ge\u00e7ersiz kod')
+        setKodHata(t('profile.invalid_code'))
         return
       }
 
@@ -376,7 +372,7 @@ export default function ProfilScreen() {
         .update({ durum: 'onaylandi', giris_yapildi: true })
         .eq('id', rezData.id)
       if (updErr) {
-        setKodHata('Kod g\u00fcncellenemedi')
+        setKodHata(t('profile.code_update_failed'))
         return
       }
 
@@ -405,7 +401,7 @@ export default function ProfilScreen() {
       // Arka planda senkron (kullan\u0131c\u0131 beklemez)
       loadProfil().catch(() => {})
     } catch {
-      setKodHata('Ge\u00e7ersiz kod')
+      setKodHata(t('profile.invalid_code'))
     } finally {
       setKodGonderiliyor(false)
     }
@@ -438,8 +434,8 @@ export default function ProfilScreen() {
         setConfirmModal(null)
         setInfoModal({
           visible: true,
-          baslik: 'İade Başarısız',
-          mesaj: data.error || 'İade işlemi sırasında bir sorun oluştu. Lütfen daha sonra tekrar deneyin.',
+          baslik: t('profile.refund_failed'),
+          mesaj: data.error || t('profile.refund_error'),
         })
         return
       }
@@ -447,16 +443,16 @@ export default function ProfilScreen() {
       setConfirmModal(null)
       setInfoModal({
         visible: true,
-        baslik: 'Rezervasyon İptal Edildi',
-        mesaj: 'Rezervasyon iptal edildi. Ücret iadeniz 5 iş günü içinde kartınıza yansıyacaktır.',
+        baslik: t('profile.reservation_cancelled'),
+        mesaj: t('profile.reservation_cancelled_body'),
       })
       loadProfil().catch(() => {})
     } catch (e: any) {
       setConfirmModal(null)
       setInfoModal({
         visible: true,
-        baslik: 'Hata',
-        mesaj: e?.message || 'Beklenmeyen bir hata oluştu.',
+        baslik: t('profile.error'),
+        mesaj: e?.message || t('profile.unexpected_error'),
       })
     } finally {
       setIptalLoading(false)
@@ -469,7 +465,7 @@ export default function ProfilScreen() {
     setCallModalRez(null)
     if (!rez) return
     const kilitKey = String(rez.id)
-    const musteriAd = `${profil?.ad || ''} ${profil?.soyad || ''}`.trim() || 'Müşteri'
+    const musteriAd = `${profil?.ad || ''} ${profil?.soyad || ''}`.trim() || t('profile.customer_fallback')
     const insertedAt = new Date().toISOString()
     const { data: insertData, error } = await supabase
       .from('bildirimler')
@@ -479,15 +475,15 @@ export default function ProfilScreen() {
         sezlong_id: (rez as any).sezlong_id,
         rezervasyon_id: rez.id,
         kullanici_id: null,
-        baslik: 'Garson Çağrısı',
-        mesaj: `${musteriAd} size çağrıda bulundu`,
+        baslik: t('profile.waiter_call_title'),
+        mesaj: t('profile.waiter_call_body', { musteriAdi: musteriAd }),
         okundu: false,
       })
       .select('id, created_at')
       .single()
     if (error) {
       console.error('handleCallConfirm insert error:', JSON.stringify(error, null, 2))
-      Alert.alert('Hata', 'Çağrı gönderilemedi, tekrar deneyin')
+      Alert.alert(t('profile.error'), t('profile.call_send_failed'))
       return
     }
     const createdAt = insertData?.created_at ?? insertedAt
@@ -502,7 +498,7 @@ export default function ProfilScreen() {
         varisSuresi: null,
       },
     }))
-    setCagriToast({ visible: true, mesaj: 'Garson çağrıldı, birazdan yanınızda olacak' })
+    setCagriToast({ visible: true, mesaj: t('profile.waiter_called_toast') })
     setTimeout(() => setCagriToast({ visible: false, mesaj: '' }), 3000)
     const yeniBitis = Date.now() + 2 * 60 * 1000
     setGarsonCagriCooldown((prev) => ({ ...prev, [kilitKey]: yeniBitis }))
@@ -554,7 +550,7 @@ export default function ProfilScreen() {
           email: emailVal,
           telefon: userData.telefon != null ? String(userData.telefon) : '',
           sehir: userData.sehir != null ? String(userData.sehir) : '',
-          uyeAyYil: formatUyeAyYil(userData.created_at),
+          memberSinceIso: userData.created_at ?? '',
           eposta_dogrulandi: !!user.email_confirmed_at,
         })
         setForm({
@@ -720,7 +716,7 @@ export default function ProfilScreen() {
                   const d1 = new Date(r.bitis_tarih)
                   if (Number.isNaN(d0.getTime()) || Number.isNaN(d1.getTime())) return '-'
                   const diff = Math.round((d1.getTime() - d0.getTime()) / (1000 * 60 * 60 * 24))
-                  return `${Math.max(1, diff)} gün`
+                  return i18n.t('profile.day', { count: Math.max(1, diff) })
                 })(),
                 odenen: formatTutar(r.toplam_tutar),
                 durum: rezDurum,
@@ -995,7 +991,16 @@ export default function ProfilScreen() {
     const t = (profil?.ad ?? '').trim()
     return t ? t.charAt(0).toLocaleUpperCase('tr-TR') : '?'
   }, [profil?.ad])
-  const uyelikTarihi = profil?.uyeAyYil ?? ''
+  const memberSinceLine = useMemo(() => {
+    const iso = profil?.memberSinceIso
+    if (!iso) return ''
+    const d = new Date(iso)
+    if (Number.isNaN(d.getTime())) return ''
+    const loc = i18n.language.startsWith('tr') ? 'tr-TR' : 'en-US'
+    const month = d.toLocaleDateString(loc, { month: 'long' })
+    const monthCap = month.charAt(0).toLocaleUpperCase(loc) + month.slice(1)
+    return t('profile.member_since', { month: monthCap, year: d.getFullYear() })
+  }, [profil?.memberSinceIso, i18n.language, t])
 
   const filtrelenmisRez = useMemo(() => {
     if (rezFilter === 'tum') return rezervasyonlar
@@ -1030,7 +1035,7 @@ export default function ProfilScreen() {
       })
       .eq('id', profil.id)
     if (error) {
-      Alert.alert('Hata', error.message)
+      Alert.alert(t('profile.error'), error.message)
       return
     }
     setProfil({
@@ -1040,7 +1045,7 @@ export default function ProfilScreen() {
       telefon: form.telefon.trim(),
       sehir: form.sehir.trim(),
     })
-    setSuccessMesaj('✓ Profiliniz güncellendi')
+    setSuccessMesaj(t('profile.profile_updated_check'))
     setTimeout(() => setSuccessMesaj(''), 2500)
     setKaydetBasari(true)
     setTimeout(() => setKaydetBasari(false), 2000)
@@ -1048,18 +1053,18 @@ export default function ProfilScreen() {
 
   const handleParolaDegistir = async () => {
     if (!mevcutParola.trim() || !yeniParola.trim() || !yeniParolaTekrar.trim()) {
-      Alert.alert('Hata', 'Tüm alanları doldurun.')
+      Alert.alert(t('profile.error'), t('profile.fill_all_fields'))
       return
     }
     if (yeniParola !== yeniParolaTekrar) {
-      Alert.alert('Hata', 'Yeni parola ile tekrarı eşleşmiyor.')
+      Alert.alert(t('profile.error'), t('profile.passwords_no_match'))
       return
     }
     const {
       data: { user },
     } = await supabase.auth.getUser()
     if (!user?.email) {
-      Alert.alert('Hata', 'Oturum bulunamadı.')
+      Alert.alert(t('profile.error'), t('profile.session_not_found'))
       return
     }
     const { error: signErr } = await supabase.auth.signInWithPassword({
@@ -1067,19 +1072,19 @@ export default function ProfilScreen() {
       password: mevcutParola,
     })
     if (signErr) {
-      Alert.alert('Hata', 'Mevcut parola hatalı.')
+      Alert.alert(t('profile.error'), t('profile.current_password_wrong'))
       return
     }
     const { error } = await supabase.auth.updateUser({ password: yeniParola })
     if (error) {
-      Alert.alert('Hata', error.message)
+      Alert.alert(t('profile.error'), error.message)
       return
     }
     setMevcutParola('')
     setYeniParola('')
     setYeniParolaTekrar('')
     setModalParola(false)
-    setSuccessMesaj('✓ Parolanız güncellendi')
+    setSuccessMesaj(t('profile.password_updated'))
     setTimeout(() => setSuccessMesaj(''), 2500)
   }
 
@@ -1137,7 +1142,7 @@ export default function ProfilScreen() {
               <Text style={styles.avatarText}>{avatarHarf}</Text>
             </View>
           </View>
-          <Text style={{ fontSize: 9, color: 'rgba(255,255,255,0.75)', fontWeight: '600', textAlign: 'center', marginTop: 1, letterSpacing: 1 }}>HOŞ GELDİN</Text>
+          <Text style={{ fontSize: 9, color: 'rgba(255,255,255,0.75)', fontWeight: '600', textAlign: 'center', marginTop: 1, letterSpacing: 1 }}>{t('profile.welcome')}</Text>
           <Text style={styles.userName}>
             {profil ? `${profil.ad} ${profil.soyad}`.trim() : ''}
           </Text>
@@ -1146,15 +1151,15 @@ export default function ProfilScreen() {
             {profil?.eposta_dogrulandi ? (
               <View style={styles.badgeYesil}>
                 <Ionicons name="checkmark-circle" size={14} color="#15803d" />
-                <Text style={styles.badgeYesilText}>E-posta Doğrulandı</Text>
+                <Text style={styles.badgeYesilText}>{t('profile.email_verified')}</Text>
               </View>
             ) : null}
             <View style={styles.badgeAltin}>
               <Ionicons name="ribbon-outline" size={14} color="#b45309" />
-              <Text style={styles.badgeAltinText}>Üye</Text>
+              <Text style={styles.badgeAltinText}>{t('profile.member')}</Text>
             </View>
           </View>
-          {uyelikTarihi ? (
+          {memberSinceLine ? (
             <Text style={{
               fontSize: 10,
               color: 'rgba(255,255,255,0.85)',
@@ -1162,7 +1167,7 @@ export default function ProfilScreen() {
               marginTop: 3,
               textAlign: 'center'
             }}>
-              Üye: {uyelikTarihi}
+              {memberSinceLine}
             </Text>
           ) : null}
         </View>
@@ -1200,7 +1205,7 @@ export default function ProfilScreen() {
                 {rezervasyonlar.filter((r) => r.durum !== 'iptal').length}
               </Text>
               <Text style={{ fontSize: 10, color: 'rgba(255,255,255,0.75)', marginTop: 2, fontWeight: '600' }}>
-                Rezervasyon
+                {t('profile.reservations')}
               </Text>
             </View>
             <View style={{ flex: 1, alignItems: 'center', paddingLeft: 16, borderRightWidth: 1, borderRightColor: 'rgba(255,255,255,0.25)', paddingRight: 16 }}>
@@ -1210,7 +1215,7 @@ export default function ProfilScreen() {
                 {toplamHarcama.toLocaleString('tr-TR')}
               </Text>
               <Text style={{ fontSize: 10, color: 'rgba(255,255,255,0.75)', marginTop: 2, fontWeight: '600' }}>
-                Toplam Harcama
+                {t('profile.total_spent')}
               </Text>
             </View>
             <View style={{ flex: 1, alignItems: 'center' }}>
@@ -1218,19 +1223,19 @@ export default function ProfilScreen() {
               <Text style={{ fontSize: 22, fontWeight: '800', color: '#fff', marginTop: 2 }}>
                 {'₺'}{toplamKalanBakiye.toLocaleString('tr-TR')}
               </Text>
-              <Text style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', marginTop: 2 }}>
-                Kalan Bakiye
+              <Text style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', marginTop: 2, textAlign: 'center' }}>
+                {t('profile.remaining_balance')}
               </Text>
             </View>
           </LinearGradient>
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>QR Girişi</Text>
+          <Text style={styles.cardTitle}>{t('profile.qr_entry')}</Text>
           <View style={styles.qrBtnRow}>
             <TouchableOpacity style={styles.btnQrOku} activeOpacity={0.85} onPress={() => void handleQrOku()}>
               <Ionicons name="camera-outline" size={22} color="#fff" />
-              <Text style={styles.btnQrOkuText}>QR Oku</Text>
+              <Text style={styles.btnQrOkuText}>{t('profile.scan_qr')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.btnKodGir}
@@ -1242,23 +1247,23 @@ export default function ProfilScreen() {
               }}
             >
               <Ionicons name="keypad-outline" size={22} color="#fff" />
-              <Text style={styles.btnKodGirText}>Kod Gir</Text>
+              <Text style={styles.btnKodGirText}>{t('profile.enter_code')}</Text>
             </TouchableOpacity>
           </View>
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Aktif Şezlonglarım</Text>
+          <Text style={styles.cardTitle}>{t('profile.active_sunbeds')}</Text>
           {aktifSezlonglar.length === 0 ? (
             <View style={styles.sezlongBos}>
               <Ionicons name="umbrella-outline" size={40} color="#94a3b8" />
-              <Text style={styles.sezlongBosText}>Henüz aktif şezlongunuz yok</Text>
+              <Text style={styles.sezlongBosText}>{t('profile.no_active_sunbed')}</Text>
               <TouchableOpacity
                 style={styles.btnRezYap}
                 activeOpacity={0.9}
                 onPress={() => router.push('/')}
               >
-                <Text style={styles.btnRezYapText}>Rezervasyon Yap</Text>
+                <Text style={styles.btnRezYapText}>{t('profile.make_reservation')}</Text>
               </TouchableOpacity>
             </View>
           ) : (
@@ -1272,9 +1277,18 @@ export default function ProfilScreen() {
                     : String(foto0?.src ?? foto0?.url ?? '')
               const sureGun =
                 typeof r.sure === 'number' && Number.isFinite(r.sure) && r.sure > 0
-                  ? `${r.sure} gün`
+                  ? (i18n.language.startsWith('en') && r.sure !== 1
+                    ? t('profile.day_plural', { count: r.sure })
+                    : t('profile.day_singular', { count: r.sure }))
                   : typeof r.sure === 'string' && String(r.sure).trim() !== ''
-                    ? `${String(r.sure).trim()} gün`
+                    ? (() => {
+                        const n = Number(String(r.sure).trim())
+                        return Number.isFinite(n) && n > 0
+                          ? (i18n.language.startsWith('en') && n !== 1
+                            ? t('profile.day_plural', { count: n })
+                            : t('profile.day_singular', { count: n }))
+                          : aktifSezlongSureStr(r)
+                      })()
                     : aktifSezlongSureStr(r)
               return (
                 <View
@@ -1331,7 +1345,7 @@ export default function ProfilScreen() {
                               paddingVertical: 2,
                             }}
                           >
-                            <Text style={{ color: 'white', fontSize: 11, fontWeight: 'bold' }}>Aktif</Text>
+                            <Text style={{ color: 'white', fontSize: 11, fontWeight: 'bold' }}>{t('profile.active')}</Text>
                           </View>
                         ) : (
                           <View />
@@ -1346,7 +1360,7 @@ export default function ProfilScreen() {
                               const kod = r.rezervasyon_kodu ?? ''
                               if (!kod) return
                               await Clipboard.setStringAsync(kod)
-                              setSuccessMesaj('✓ Kod kopyalandı')
+                              setSuccessMesaj(t('profile.code_copied'))
                               setTimeout(() => setSuccessMesaj(''), 2000)
                             }}
                           >
@@ -1355,16 +1369,16 @@ export default function ProfilScreen() {
                         </View>
                       </View>
                       <Text style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>
-                        Tarih: {formatRezTarih(r.baslangic_tarih ?? '')}
+                        {t('profile.date_label')}: {formatRezTarih(r.baslangic_tarih ?? '')}
                       </Text>
                       <Text style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
-                        {'\u015eezlong: ' + (sezlongMap[r.sezlong_id] ?? '')}
+                        {t('profile.sunbed_label')}: {sezlongMap[r.sezlong_id] ?? ''}
                       </Text>
                       <Text style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
-                        Süre: {sureGun}
+                        {t('profile.duration_label')}: {sureGun}
                       </Text>
                       <Text style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
-                        Ödenen: {formatTutar(r.toplam_tutar)}
+                        {t('profile.paid_label')}: {formatTutar(r.toplam_tutar)}
                       </Text>
                     </View>
                   </View>
@@ -1392,7 +1406,7 @@ export default function ProfilScreen() {
                           }}
                         >
                           <Text style={{ fontSize: 13, color: '#0C4A6E', fontWeight: '600' }}>
-                            💚 Garson şezlongunuza geldi • Süre: {formatSure(sureSn)}
+                            💚 {t('profile.waiter_arrived')} • {t('profile.duration_label')}: {formatSure(sureSn)}
                           </Text>
                         </View>
                       )
@@ -1415,7 +1429,7 @@ export default function ProfilScreen() {
                           }}
                         >
                           <Text style={{ fontSize: 13, color: '#065F46', fontWeight: '600' }}>
-                            ✅ Garson yolda • Yanıt süresi: {formatSure(sureSn)}
+                            ✅ {t('profile.waiter_on_way')} • {t('profile.waiter_response_time')}: {formatSure(sureSn)}
                           </Text>
                         </View>
                       )
@@ -1423,7 +1437,7 @@ export default function ProfilScreen() {
 
                     // Aşama 1: bekliyor
                     const dakikaOnce = Math.max(0, Math.round((nowMs - createdMs) / 60000))
-                    const zamanMetni = dakikaOnce === 0 ? 'Az önce' : `${dakikaOnce} dk önce`
+                    const zamanMetni = dakikaOnce === 0 ? t('profile.just_now') : t('profile.min_ago', { count: dakikaOnce })
                     return (
                       <View
                         style={{
@@ -1437,7 +1451,7 @@ export default function ProfilScreen() {
                         }}
                       >
                         <Text style={{ fontSize: 13, color: '#92400E', fontWeight: '600' }}>
-                          🔔 Garson çağrısı gönderildi • {zamanMetni}
+                          🔔 {t('profile.waiter_call_sent')} • {zamanMetni}
                         </Text>
                       </View>
                     )
@@ -1480,7 +1494,7 @@ export default function ProfilScreen() {
                               color={!girisYapildi ? '#9CA3AF' : '#fff'}
                             />
                             <Text style={{ color: !girisYapildi ? '#6B7280' : '#fff', fontWeight: '700', fontSize: 13 }}>
-                              {!girisYapildi ? 'Garson Çağır' : (cagriKilitli ? 'Çağrıldı' : 'Garson Çağır')}
+                              {!girisYapildi ? t('profile.call_waiter') : (cagriKilitli ? t('profile.called') : t('profile.call_waiter'))}
                             </Text>
                           </TouchableOpacity>
 
@@ -1507,7 +1521,7 @@ export default function ProfilScreen() {
                           >
                             <Ionicons name={!girisYapildi ? 'lock-closed' : 'restaurant'} size={15} color={!girisYapildi ? '#9CA3AF' : '#fff'} />
                             <Text style={{ color: !girisYapildi ? '#6B7280' : '#fff', fontWeight: '700', fontSize: 13 }}>
-                              Sipariş Ver
+                              {t('profile.place_order')}
                             </Text>
                           </TouchableOpacity>
                         </View>
@@ -1529,7 +1543,7 @@ export default function ProfilScreen() {
                             router.push(`/tesis/${slug}`)
                           }}
                         >
-                          <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>Tesise Git →</Text>
+                          <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>{`${t('profile.go_to_facility')} →`}</Text>
                         </TouchableOpacity>
 
                         {/* Bilgi mesajı: şezlong girişi yapılmamışsa */}
@@ -1546,7 +1560,7 @@ export default function ProfilScreen() {
                           }}>
                             <Ionicons name="information-circle" size={16} color="#92400E" />
                             <Text style={{ flex: 1, fontSize: 12, color: '#92400E', fontWeight: '600' }}>
-                              Sipariş verebilmek için QR Oku yada Kod ile şezlong girişi yapın.
+                              {t('profile.order_info')}
                             </Text>
                           </View>
                         )}
@@ -1567,11 +1581,11 @@ export default function ProfilScreen() {
         >
           {(
             [
-              { key: 'rezervasyonlar' as const, label: 'Rezervasyonlarım' },
-              { key: 'siparisler' as const, label: 'Siparişlerim' },
-              { key: 'yorumlar' as const, label: 'Yorumlarım' },
-              { key: 'favoriler' as const, label: 'Favorilerim' },
-              { key: 'bildirimler' as const, label: 'Bildirimler' },
+              { key: 'rezervasyonlar' as const, label: t('profile.tab_reservations') },
+              { key: 'siparisler' as const, label: t('profile.tab_orders') },
+              { key: 'yorumlar' as const, label: t('profile.tab_reviews') },
+              { key: 'favoriler' as const, label: t('profile.tab_favorites') },
+              { key: 'bildirimler' as const, label: t('profile.tab_notifications') },
             ] as const
           ).map((s) => (
             <TouchableOpacity
@@ -1600,11 +1614,11 @@ export default function ProfilScreen() {
               >
                 {(
                   [
-                    { key: 'tum' as const, label: `Tümü (${rezFilterCounts.tum})` },
-                    { key: 'yaklasan' as const, label: `Yaklaşan (${rezFilterCounts.yaklasan})` },
-                    { key: 'aktif' as const, label: `Aktif (${rezFilterCounts.aktif})` },
-                    { key: 'gecmis' as const, label: `Geçmiş (${rezFilterCounts.gecmis})` },
-                    { key: 'iptal' as const, label: `İptal (${rezFilterCounts.iptal})` },
+                    { key: 'tum' as const, label: `${t('profile.filter_all')} (${rezFilterCounts.tum})` },
+                    { key: 'yaklasan' as const, label: `${t('profile.filter_upcoming')} (${rezFilterCounts.yaklasan})` },
+                    { key: 'aktif' as const, label: `${t('profile.active')} (${rezFilterCounts.aktif})` },
+                    { key: 'gecmis' as const, label: `${t('profile.filter_past')} (${rezFilterCounts.gecmis})` },
+                    { key: 'iptal' as const, label: `${t('profile.filter_cancelled')} (${rezFilterCounts.iptal})` },
                   ] as const
                 ).map((f) => (
                   <TouchableOpacity
@@ -1624,7 +1638,7 @@ export default function ProfilScreen() {
             </View>
             <View style={{ marginHorizontal: 12, paddingHorizontal: 16 }}>
             {filtrelenmisRez.length === 0 ? (
-              <Text style={styles.bosListe}>Bu filtrede rezervasyon yok.</Text>
+              <Text style={styles.bosListe}>{t('profile.no_reservations_filter')}</Text>
             ) : (
               filtrelenmisRez.slice(0, visibleRezCount).map((r) => {
                 const dc = rezDurumBadgeColors(r.durum)
@@ -1676,19 +1690,19 @@ export default function ProfilScreen() {
                     <View style={styles.rezInfoBlock}>
                       <View style={styles.rezInfoLineRow}>
                         <Ionicons name="calendar-outline" size={13} color="#64748b" />
-                        <Text style={styles.rezInfoLine}>Tarih: {formatRezTarih(r.tarih)}</Text>
+                        <Text style={styles.rezInfoLine}>{t('profile.date_label')}: {formatRezTarih(r.tarih)}</Text>
                       </View>
                       <View style={styles.rezInfoLineRow}>
                         <Ionicons name="bed-outline" size={13} color="#64748b" />
-                        <Text style={styles.rezInfoLine}>Şezlong: {r.sezlongLabel}</Text>
+                        <Text style={styles.rezInfoLine}>{t('profile.sunbed_label')}: {r.sezlongLabel}</Text>
                       </View>
                       <View style={styles.rezInfoLineRow}>
                         <Ionicons name="time-outline" size={13} color="#64748b" />
-                        <Text style={styles.rezInfoLine}>Süre: {r.sure}</Text>
+                        <Text style={styles.rezInfoLine}>{t('profile.duration_label')}: {r.sure}</Text>
                       </View>
                       <View style={styles.rezInfoLineRow}>
                         <Ionicons name="cash-outline" size={13} color="#0ABAB5" />
-                        <Text style={styles.rezInfoLine}>Ödenen: {r.odenen}</Text>
+                        <Text style={styles.rezInfoLine}>{t('profile.paid_label')}: {r.odenen}</Text>
                       </View>
                     </View>
                     <View style={styles.rezWebBtnRow}>
@@ -1722,7 +1736,7 @@ export default function ProfilScreen() {
                             }}
                           >
                             <Text style={[styles.btnIptalText, { color: '#fff', fontWeight: '700' }]}>
-                              İptal Et
+                              {t('profile.cancel_reservation')}
                             </Text>
                           </TouchableOpacity>
                         )
@@ -1734,7 +1748,7 @@ export default function ProfilScreen() {
                           if (r.tesisSlug) router.push(`/tesis/${r.tesisSlug}`)
                         }}
                       >
-                        <Text style={styles.btnTesiseGitText}>Tesise Git</Text>
+                        <Text style={styles.btnTesiseGitText}>{t('profile.go_to_facility')}</Text>
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -1756,7 +1770,7 @@ export default function ProfilScreen() {
                 onPress={() => setVisibleRezCount((prev) => prev + 10)}
               >
                 <Text style={{ color: '#0EA5A4', fontWeight: '600', fontSize: 14 }}>
-                  Daha Fazla Göster ({filtrelenmisRez.length - visibleRezCount} adet kaldı)
+                  {`${t('profile.show_more')} (${t('profile.show_more_remain', { count: filtrelenmisRez.length - visibleRezCount })})`}
                 </Text>
               </TouchableOpacity>
             )}
@@ -1767,16 +1781,16 @@ export default function ProfilScreen() {
         {altSekme === 'yorumlar' ? (
           <View style={styles.card}>
             {yorumlar.length === 0 ? (
-              <Text style={styles.bosListe}>Henüz yorum yapmadınız</Text>
+              <Text style={styles.bosListe}>{t('profile.no_reviews')}</Text>
             ) : (
               yorumlar.map((r: any) => {
                 let yorumDurumBadge: { bg: string; fg: string; label: string } | null = null
                 if (r.durum === 'onaylı') {
-                  yorumDurumBadge = { bg: '#dcfce7', fg: '#15803d', label: 'Onaylı' }
+                  yorumDurumBadge = { bg: '#dcfce7', fg: '#15803d', label: t('profile.review_approved') }
                 } else if (r.durum === 'bekliyor') {
-                  yorumDurumBadge = { bg: '#fef3c7', fg: '#b45309', label: 'Beklemede' }
+                  yorumDurumBadge = { bg: '#fef3c7', fg: '#b45309', label: t('profile.review_pending') }
                 } else if (r.durum === 'reddedildi') {
-                  yorumDurumBadge = { bg: '#fee2e2', fg: '#dc2626', label: 'Reddedildi' }
+                  yorumDurumBadge = { bg: '#fee2e2', fg: '#dc2626', label: t('profile.review_rejected') }
                 }
                 return (
                   <View key={r.id} style={[styles.rezCard, { position: 'relative' }]}>
@@ -1847,7 +1861,7 @@ export default function ProfilScreen() {
                   </View>
                   <View style={styles.favBody}>
                     <Text style={styles.rezTesisAd}>{r.tesisler?.ad ?? 'Tesis'}</Text>
-                    <Text style={styles.rezMeta}>Favorilere eklendi: {r.created_at?.slice(0, 10)}</Text>
+                    <Text style={styles.rezMeta}>{t('profile.added_to_favorites')}: {r.created_at?.slice(0, 10)}</Text>
                     <TouchableOpacity
                       style={{
                         backgroundColor: '#f97316',
@@ -1879,7 +1893,7 @@ export default function ProfilScreen() {
               <View style={{ padding: 32, alignItems: 'center' }}>
                 <Ionicons name="notifications-off-outline" size={40} color="#cbd5e1" />
                 <Text style={{ marginTop: 10, fontSize: 14, color: '#64748b' }}>
-                  Henüz bildirim yok
+                  {t('profile.no_notifications')}
                 </Text>
               </View>
             ) : (
@@ -1894,7 +1908,7 @@ export default function ProfilScreen() {
                 let borderColor = 'rgba(148,163,184,0.3)'
                 let textColor = '#475569'
                 let icon = 'notifications-outline'
-                let durumMetni = 'Bekliyor'
+                let durumMetni = t('profile.notif_waiting')
 
                 if (varisMs) {
                   bgColor = 'rgba(8,145,178,0.08)'
@@ -1920,13 +1934,13 @@ export default function ProfilScreen() {
                   borderColor = 'rgba(239,68,68,0.3)'
                   textColor = '#991B1B'
                   icon = 'alert-circle-outline'
-                  durumMetni = 'Garson henüz yanıt vermedi'
+                  durumMetni = t('profile.notif_no_response')
                 } else if (!b.okundu) {
                   bgColor = 'rgba(245,130,31,0.08)'
                   borderColor = 'rgba(245,130,31,0.3)'
                   textColor = '#92400E'
                   icon = 'time-outline'
-                  durumMetni = 'Bekleniyor'
+                  durumMetni = t('profile.notif_pending')
                 }
 
                 return (
@@ -1967,7 +1981,7 @@ export default function ProfilScreen() {
             {/* Aktif Siparişler */}
             <View>
               <Text style={{ fontSize: 14, fontWeight: '700', color: '#0f172a', marginBottom: 10 }}>
-                Aktif Siparişlerim
+                {t('profile.active_orders')}
               </Text>
               {aktifSiparislerLoading ? (
                 <ActivityIndicator size="small" color="#0ABAB5" />
@@ -1975,17 +1989,17 @@ export default function ProfilScreen() {
                 <View style={{ padding: 20, alignItems: 'center', backgroundColor: '#f8fafc', borderRadius: 10 }}>
                   <Ionicons name="restaurant-outline" size={32} color="#cbd5e1" />
                   <Text style={{ marginTop: 8, fontSize: 13, color: '#64748b' }}>
-                    Aktif siparişiniz yok
+                    {t('profile.no_active_orders')}
                   </Text>
                 </View>
               ) : (
                 aktifSiparisler.map((s: any) => {
                   const stages = [
-                    { key: SIPARIS_DURUM.YENI,         label: 'Alındı',       icon: '✓'  },
-                    { key: SIPARIS_DURUM.HAZIRLANIYOR, label: 'Hazırlanıyor', icon: '🍳' },
-                    { key: SIPARIS_DURUM.HAZIR,        label: 'Hazır',        icon: '🔔' },
-                    { key: SIPARIS_DURUM.YOLDA,        label: 'Yolda',        icon: '🛵' },
-                    { key: SIPARIS_DURUM.TESLIM_EDILDI,label: 'Teslim',       icon: '✅' },
+                    { key: SIPARIS_DURUM.YENI, label: t('profile.stage_received'), icon: '✓' },
+                    { key: SIPARIS_DURUM.HAZIRLANIYOR, label: t('profile.stage_preparing'), icon: '🍳' },
+                    { key: SIPARIS_DURUM.HAZIR, label: t('profile.stage_ready'), icon: '🔔' },
+                    { key: SIPARIS_DURUM.YOLDA, label: t('profile.stage_on_way'), icon: '🛵' },
+                    { key: SIPARIS_DURUM.TESLIM_EDILDI, label: t('profile.stage_delivered'), icon: '✅' },
                   ]
                   const currentIdx = stages.findIndex((st) => st.key === s.durum)
                   const tesisAd = s.tesisler?.ad || 'Bilinmeyen Tesis'
@@ -1994,10 +2008,10 @@ export default function ProfilScreen() {
                   const toplamGoster = toplamHesap > 0 ? toplamHesap : Number(s.toplam || 0)
                   const zamanOnce = formatZamanOnce(s.created_at)
                   const chipConfig: Record<string, { bg: string; color: string; text: string }> = {
-                    [SIPARIS_DURUM.YENI]:         { bg: 'rgba(245,130,31,0.12)', color: '#F5821F', text: '📥 Alındı' },
-                    [SIPARIS_DURUM.HAZIRLANIYOR]: { bg: 'rgba(234,179,8,0.12)',  color: '#CA8A04', text: '🍳 Hazırlanıyor' },
-                    [SIPARIS_DURUM.HAZIR]:        { bg: 'rgba(16,185,129,0.12)', color: '#10B981', text: '🔔 Hazır' },
-                    [SIPARIS_DURUM.YOLDA]:        { bg: 'rgba(59,130,246,0.15)', color: '#3B82F6', text: '🛵 Garson Yolda' },
+                    [SIPARIS_DURUM.YENI]: { bg: 'rgba(245,130,31,0.12)', color: '#F5821F', text: `📥 ${t('profile.stage_received')}` },
+                    [SIPARIS_DURUM.HAZIRLANIYOR]: { bg: 'rgba(234,179,8,0.12)', color: '#CA8A04', text: `🍳 ${t('profile.stage_preparing')}` },
+                    [SIPARIS_DURUM.HAZIR]: { bg: 'rgba(16,185,129,0.12)', color: '#10B981', text: `🔔 ${t('profile.stage_ready')}` },
+                    [SIPARIS_DURUM.YOLDA]: { bg: 'rgba(59,130,246,0.15)', color: '#3B82F6', text: `🛵 ${t('profile.stage_on_way')}` },
                   }
                   const chip = chipConfig[s.durum] ?? chipConfig[SIPARIS_DURUM.YENI]
 
@@ -2022,7 +2036,7 @@ export default function ProfilScreen() {
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
                         <View>
                           <Text style={{ fontSize: 14, fontWeight: '700', color: '#0f172a' }}>
-                            Sipariş #{String(s.id).slice(-5)}
+                            {t('profile.order_prefix')} #{String(s.id).slice(-5)}
                           </Text>
                           <Text style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{tesisAd}</Text>
                         </View>
@@ -2105,14 +2119,14 @@ export default function ProfilScreen() {
             <View>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                 <Text style={{ fontSize: 14, fontWeight: '700', color: '#0f172a' }}>
-                  Sipariş Geçmişim
+                  {t('profile.order_history')}
                 </Text>
               </View>
 
               {/* Filtre butonları */}
               <View style={{ flexDirection: 'row', gap: 6, marginBottom: 10 }}>
                 {(['bugun', 'hafta', 'ay', 'tumu'] as const).map((f) => {
-                  const labels = { bugun: 'Bugün', hafta: 'Hafta', ay: 'Ay', tumu: 'Tümü' }
+                  const labels = { bugun: t('profile.filter_today'), hafta: t('profile.filter_week'), ay: t('profile.filter_month'), tumu: t('profile.filter_all') }
                   const isActive = gecmisFilter === f
                   return (
                     <TouchableOpacity
@@ -2143,15 +2157,16 @@ export default function ProfilScreen() {
                 <View style={{ padding: 20, alignItems: 'center', backgroundColor: '#f8fafc', borderRadius: 10 }}>
                   <Ionicons name="archive-outline" size={32} color="#cbd5e1" />
                   <Text style={{ marginTop: 8, fontSize: 13, color: '#64748b' }}>
-                    Bu filtrede sipariş yok
+                    {t('profile.no_orders_filter')}
                   </Text>
                 </View>
               ) : (
                 (() => {
+                  const siparisTarihLocale = i18n.language?.startsWith('tr') ? 'tr-TR' : 'en-US'
                   const gruplar: Record<string, any[]> = {}
                   gecmisTumSiparisler.forEach((s: any) => {
                     const d = new Date(s.created_at)
-                    const key = d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric', weekday: 'long' })
+                    const key = d.toLocaleDateString(siparisTarihLocale, { day: 'numeric', month: 'long', year: 'numeric', weekday: 'long' })
                     if (!gruplar[key]) gruplar[key] = []
                     gruplar[key].push(s)
                   })
@@ -2162,7 +2177,7 @@ export default function ProfilScreen() {
                       </Text>
                       {siparisler.map((s: any) => {
                         const tesisAd = s.tesisler?.ad || 'Bilinmeyen Tesis'
-                        const saat = new Date(s.created_at).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
+                        const saat = new Date(s.created_at).toLocaleTimeString(siparisTarihLocale, { hour: '2-digit', minute: '2-digit' })
                         const kalemleri: any[] = Array.isArray(s.siparis_kalemleri) ? s.siparis_kalemleri : []
                         const isIptal = s.durum === 'iptal' || s.durum === 'iptal_edildi'
                         return (
@@ -2180,7 +2195,7 @@ export default function ProfilScreen() {
                             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
                               <View style={{ flex: 1, marginRight: 8 }}>
                                 <Text style={{ fontSize: 13, fontWeight: '800', color: '#0f172a' }}>
-                                  Sipariş #{String(s.id).slice(-5)}
+                                  {t('profile.order_prefix')} #{String(s.id).slice(-5)}
                                 </Text>
                                 <Text style={{ fontSize: 11, color: '#64748b', marginTop: 1 }} numberOfLines={1}>{tesisAd}</Text>
                               </View>
@@ -2195,7 +2210,7 @@ export default function ProfilScreen() {
                                   paddingVertical: 2,
                                 }}>
                                   <Text style={{ fontSize: 10, fontWeight: '800', color: isIptal ? '#b91c1c' : '#16a34a' }}>
-                                    {isIptal ? '✗ İptal' : '✓ Teslim'}
+                                    {isIptal ? `✗ ${t('profile.order_cancelled')}` : `✓ ${t('profile.order_delivered_check')}`}
                                   </Text>
                                 </View>
                               </View>
@@ -2242,7 +2257,7 @@ export default function ProfilScreen() {
                 borderBottomColor: '#f1f5f9',
               }}
             >
-              <Text style={{ fontSize: 17, fontWeight: '800', color: '#0A1628' }}>Ayarlar</Text>
+              <Text style={{ fontSize: 17, fontWeight: '800', color: '#0A1628' }}>{t('profile.settings_title')}</Text>
               <TouchableOpacity onPress={() => setModalAyarlar(false)} hitSlop={12}>
                 <Ionicons name="close" size={24} color="#64748b" />
               </TouchableOpacity>
@@ -2262,7 +2277,7 @@ export default function ProfilScreen() {
                       marginBottom: accordionProfil ? 12 : 0,
                     }}
                   >
-                    <Text style={{ fontSize: 15, fontWeight: '800', color: '#0A1628' }}>👤 Profil Bilgileri</Text>
+                    <Text style={{ fontSize: 15, fontWeight: '800', color: '#0A1628' }}>{'👤 '}{t('profile.profile_info')}</Text>
                     <Ionicons name={accordionProfil ? 'chevron-up' : 'chevron-down'} size={18} color="#64748b" />
                   </TouchableOpacity>
                   {accordionProfil ? (
@@ -2281,66 +2296,66 @@ export default function ProfilScreen() {
                         >
                           <Ionicons name="checkmark-circle" size={18} color="#15803d" />
                           <Text style={{ color: '#15803d', fontWeight: '700', fontSize: 13 }}>
-                            Profiliniz güncellendi!
+                            {t('profile.profile_updated_banner')}
                           </Text>
                         </View>
                       ) : null}
                       <View style={{ marginBottom: 12 }}>
-                        <Text style={styles.profilInputLabel}>Ad</Text>
+                        <Text style={styles.profilInputLabel}>{t('profile.first_name')}</Text>
                         <TextInput
                           style={styles.profilInput}
                           value={form.ad}
-                          onChangeText={(t) => setForm({ ...form, ad: t })}
+                          onChangeText={(txt) => setForm({ ...form, ad: txt })}
                           autoCapitalize="words"
-                          placeholder="Ad"
+                          placeholder={t('profile.first_name')}
                         />
                       </View>
                       <View style={{ marginBottom: 12 }}>
-                        <Text style={styles.profilInputLabel}>Soyad</Text>
+                        <Text style={styles.profilInputLabel}>{t('profile.last_name')}</Text>
                         <TextInput
                           style={styles.profilInput}
                           value={form.soyad}
-                          onChangeText={(t) => setForm({ ...form, soyad: t })}
+                          onChangeText={(txt) => setForm({ ...form, soyad: txt })}
                           autoCapitalize="words"
-                          placeholder="Soyad"
+                          placeholder={t('profile.last_name')}
                         />
                       </View>
                       <View style={{ marginBottom: 12 }}>
-                        <Text style={styles.profilInputLabel}>Telefon</Text>
+                        <Text style={styles.profilInputLabel}>{t('profile.phone')}</Text>
                         <TextInput
                           style={styles.profilInput}
                           value={form.telefon}
-                          onChangeText={(t) => setForm({ ...form, telefon: t })}
+                          onChangeText={(txt) => setForm({ ...form, telefon: txt })}
                           keyboardType="phone-pad"
-                          placeholder="Telefon"
+                          placeholder={t('profile.phone')}
                         />
                       </View>
                       <View style={{ marginBottom: 12 }}>
-                        <Text style={styles.profilInputLabel}>E-posta</Text>
+                        <Text style={styles.profilInputLabel}>{t('profile.email')}</Text>
                         <TextInput
                           style={[styles.profilInput, styles.profilInputDisabled]}
                           value={form.email}
                           editable={false}
-                          placeholder="E-posta"
+                          placeholder={t('profile.email')}
                         />
                       </View>
                       <View style={{ marginBottom: 12 }}>
-                        <Text style={styles.profilInputLabel}>Doğum Tarihi</Text>
+                        <Text style={styles.profilInputLabel}>{t('profile.birth_date')}</Text>
                         <TextInput
                           style={styles.profilInput}
                           value={form.dogumTarihi ?? ''}
-                          onChangeText={(t) => setForm({ ...form, dogumTarihi: t })}
-                          placeholder="GG.AA.YYYY"
+                          onChangeText={(txt) => setForm({ ...form, dogumTarihi: txt })}
+                          placeholder={t('profile.birth_date_placeholder')}
                         />
                       </View>
                       <View style={{ marginBottom: 16 }}>
-                        <Text style={styles.profilInputLabel}>Şehir</Text>
+                        <Text style={styles.profilInputLabel}>{t('profile.city')}</Text>
                         <TextInput
                           style={styles.profilInput}
                           value={form.sehir}
-                          onChangeText={(t) => setForm({ ...form, sehir: t })}
+                          onChangeText={(txt) => setForm({ ...form, sehir: txt })}
                           autoCapitalize="words"
-                          placeholder="Şehir"
+                          placeholder={t('profile.city')}
                         />
                       </View>
                       <TouchableOpacity
@@ -2348,7 +2363,7 @@ export default function ProfilScreen() {
                         activeOpacity={0.85}
                         onPress={() => void handleKaydetProfil()}
                       >
-                        <Text style={styles.btnProfilKaydetText}>Değişiklikleri Kaydet</Text>
+                        <Text style={styles.btnProfilKaydetText}>{t('profile.save_changes')}</Text>
                       </TouchableOpacity>
                     </View>
                   ) : null}
@@ -2367,7 +2382,7 @@ export default function ProfilScreen() {
                   marginTop: 8,
                 }}
               >
-                <Text style={{ fontSize: 15, fontWeight: '800', color: '#0A1628' }}>🔒 Güvenlik</Text>
+                <Text style={{ fontSize: 15, fontWeight: '800', color: '#0A1628' }}>{'🔒 '}{t('profile.security')}</Text>
                 <Ionicons name={accordionGuvenlik ? 'chevron-up' : 'chevron-down'} size={18} color="#64748b" />
               </TouchableOpacity>
               {accordionGuvenlik ? (
@@ -2377,8 +2392,8 @@ export default function ProfilScreen() {
                       <View style={styles.guvenlikKartSol}>
                         <Ionicons name="lock-closed-outline" size={22} color="#0A1628" />
                         <View style={styles.guvenlikKartMetin}>
-                          <Text style={styles.guvenlikKartTitle}>Parola</Text>
-                          <Text style={styles.guvenlikKartSub}>Hesabınızı koruyun</Text>
+                          <Text style={styles.guvenlikKartTitle}>{t('profile.password')}</Text>
+                          <Text style={styles.guvenlikKartSub}>{t('profile.protect_account')}</Text>
                         </View>
                       </View>
                       <TouchableOpacity
@@ -2386,7 +2401,7 @@ export default function ProfilScreen() {
                         activeOpacity={0.85}
                         onPress={() => setModalParola(true)}
                       >
-                        <Text style={styles.guvenlikBtnOutlineText}>Parolayı Değiştir</Text>
+                        <Text style={styles.guvenlikBtnOutlineText}>{t('profile.change_password')}</Text>
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -2396,8 +2411,8 @@ export default function ProfilScreen() {
                       <View style={styles.guvenlikKartSol}>
                         <Ionicons name="notifications-outline" size={22} color="#0A1628" />
                         <View style={styles.guvenlikKartMetin}>
-                          <Text style={styles.guvenlikKartTitle}>E-posta Bildirimleri</Text>
-                          <Text style={styles.guvenlikKartSub}>Rezervasyon ve kampanya bildirimleri</Text>
+                          <Text style={styles.guvenlikKartTitle}>{t('profile.email_notifications')}</Text>
+                          <Text style={styles.guvenlikKartSub}>{t('profile.notif_description')}</Text>
                         </View>
                       </View>
                       <Switch
@@ -2414,8 +2429,8 @@ export default function ProfilScreen() {
                       <View style={styles.guvenlikKartSol}>
                         <Ionicons name="document-text-outline" size={22} color="#0A1628" />
                         <View style={styles.guvenlikKartMetin}>
-                          <Text style={styles.guvenlikKartTitle}>Veri ve Gizlilik</Text>
-                          <Text style={styles.guvenlikKartSub}>KVKK kapsamında verilerinizi yönetin</Text>
+                          <Text style={styles.guvenlikKartTitle}>{t('profile.data_privacy')}</Text>
+                          <Text style={styles.guvenlikKartSub}>{t('profile.kvkk_description')}</Text>
                         </View>
                       </View>
                       <TouchableOpacity
@@ -2423,7 +2438,7 @@ export default function ProfilScreen() {
                         activeOpacity={0.85}
                         onPress={() => setModalKvkk(true)}
                       >
-                        <Text style={styles.guvenlikBtnOutlineText}>Görüntüle</Text>
+                        <Text style={styles.guvenlikBtnOutlineText}>{t('profile.view')}</Text>
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -2442,30 +2457,30 @@ export default function ProfilScreen() {
       >
         <View style={styles.guvenlikModalBackdrop}>
           <View style={styles.guvenlikModalCard}>
-            <Text style={styles.guvenlikModalTitle}>Parola değiştir</Text>
-            <Text style={styles.guvenlikModalLabel}>Mevcut Parola</Text>
+            <Text style={styles.guvenlikModalTitle}>{t('profile.change_password_modal_title')}</Text>
+            <Text style={styles.guvenlikModalLabel}>{t('profile.current_password')}</Text>
             <TextInput
               style={styles.guvenlikModalInput}
               secureTextEntry
               value={mevcutParola}
               onChangeText={setMevcutParola}
-              placeholder="Mevcut parola"
+              placeholder={t('profile.current_password')}
             />
-            <Text style={styles.guvenlikModalLabel}>Yeni Parola</Text>
+            <Text style={styles.guvenlikModalLabel}>{t('profile.new_password')}</Text>
             <TextInput
               style={styles.guvenlikModalInput}
               secureTextEntry
               value={yeniParola}
               onChangeText={setYeniParola}
-              placeholder="Yeni parola"
+              placeholder={t('profile.new_password')}
             />
-            <Text style={styles.guvenlikModalLabel}>Yeni Parola (Tekrar)</Text>
+            <Text style={styles.guvenlikModalLabel}>{t('profile.new_password_repeat')}</Text>
             <TextInput
               style={styles.guvenlikModalInput}
               secureTextEntry
               value={yeniParolaTekrar}
               onChangeText={setYeniParolaTekrar}
-              placeholder="Yeni parola tekrar"
+              placeholder={t('profile.new_password_repeat')}
             />
             <View style={styles.guvenlikModalBtnRow}>
               <TouchableOpacity
@@ -2478,14 +2493,14 @@ export default function ProfilScreen() {
                   setYeniParolaTekrar('')
                 }}
               >
-                <Text style={styles.guvenlikModalBtnIptalText}>İptal</Text>
+                <Text style={styles.guvenlikModalBtnIptalText}>{t('profile.cancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.guvenlikModalBtnKaydet}
                 activeOpacity={0.85}
                 onPress={() => void handleParolaDegistir()}
               >
-                <Text style={styles.guvenlikModalBtnKaydetText}>Değiştir</Text>
+                <Text style={styles.guvenlikModalBtnKaydetText}>{t('profile.change')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -2500,21 +2515,16 @@ export default function ProfilScreen() {
       >
         <View style={styles.guvenlikModalBackdrop}>
           <View style={styles.guvenlikModalCard}>
-            <Text style={styles.guvenlikModalTitle}>Kişisel verilerin korunması</Text>
+            <Text style={styles.guvenlikModalTitle}>{t('profile.kvkk_title')}</Text>
             <ScrollView style={styles.guvenlikKvkkScroll} showsVerticalScrollIndicator={false}>
-              <Text style={styles.guvenlikKvkkBody}>
-                6698 sayılı Kişisel Verilerin Korunması Kanunu (KVKK) kapsamında, kişisel verileriniz
-                yalnızca belirtilen amaçlar doğrultusunda işlenir; güvenli şekilde saklanır ve
-                yasal süre boyunca muhafaza edilir. Verilerinize erişim, düzeltme ve silme
-                taleplerinizi veri sorumlusuna iletebilirsiniz.
-              </Text>
+              <Text style={styles.guvenlikKvkkBody}>{t('profile.kvkk_body')}</Text>
             </ScrollView>
             <TouchableOpacity
               style={[styles.guvenlikModalBtnKaydet, { alignSelf: 'stretch' }]}
               activeOpacity={0.85}
               onPress={() => setModalKvkk(false)}
             >
-              <Text style={styles.guvenlikModalBtnKaydetText}>Kapat</Text>
+              <Text style={styles.guvenlikModalBtnKaydetText}>{t('profile.close')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -2606,7 +2616,7 @@ export default function ProfilScreen() {
                 textAlign: 'center',
               }}
             >
-              {'QR kodu \u00e7er\u00e7eve i\u00e7ine al\u0131n'}
+              {t('profile.qr_frame')}
             </Text>
           </View>
           <View style={{ position: 'absolute', top: 50, left: 20, zIndex: 999 }}>
@@ -2629,15 +2639,15 @@ export default function ProfilScreen() {
       >
         <View style={styles.kodModalBackdrop}>
           <View style={styles.kodModalCard}>
-            <Text style={styles.kodModalTitle}>Rezervasyon Kodunuzu Girin</Text>
+            <Text style={styles.kodModalTitle}>{t('profile.enter_code_title')}</Text>
             <TextInput
               style={styles.kodModalInput}
               value={kodInput}
-              onChangeText={(t) => {
-                setKodInput(t.toUpperCase())
+              onChangeText={(txt) => {
+                setKodInput(txt.toUpperCase())
                 if (kodHata) setKodHata('')
               }}
-              placeholder="KOD"
+              placeholder={t('profile.code_placeholder')}
               placeholderTextColor="#94a3b8"
               autoCapitalize="characters"
               autoCorrect={false}
@@ -2653,7 +2663,7 @@ export default function ProfilScreen() {
               {kodGonderiliyor ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text style={styles.kodModalOnaylaText}>Onayla</Text>
+                <Text style={styles.kodModalOnaylaText}>{t('profile.confirm')}</Text>
               )}
             </TouchableOpacity>
             <TouchableOpacity
@@ -2665,7 +2675,7 @@ export default function ProfilScreen() {
                 setKodHata('')
               }}
             >
-              <Text style={styles.kodModalIptalText}>{'\u0130ptal'}</Text>
+              <Text style={styles.kodModalIptalText}>{t('profile.cancel')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -2679,9 +2689,9 @@ export default function ProfilScreen() {
         <View style={styles.sezlongAktifDegilBackdrop}>
           <View style={styles.sezlongAktifDegilCard}>
             <Text style={styles.sezlongAktifDegilEmoji}>🏖️</Text>
-            <Text style={styles.sezlongAktifDegilTitle}>Sezlong Henüz Aktif Değil</Text>
+            <Text style={styles.sezlongAktifDegilTitle}>{t('profile.sunbed_not_active_title')}</Text>
             <Text style={styles.sezlongAktifDegilDesc}>
-              Sipariş verebilmek için önce QR kodu okutun veya rezervasyon kodunuzu girin.
+              {t('profile.sunbed_not_active_body')}
             </Text>
             <View style={styles.sezlongAktifDegilBtnRow}>
               <TouchableOpacity
@@ -2689,7 +2699,7 @@ export default function ProfilScreen() {
                 activeOpacity={0.85}
                 onPress={() => setModalSezlongAktifDegil(false)}
               >
-                <Text style={styles.sezlongAktifDegilTamamText}>Tamam</Text>
+                <Text style={styles.sezlongAktifDegilTamamText}>{t('profile.ok')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -2812,7 +2822,7 @@ export default function ProfilScreen() {
               }}
               activeOpacity={0.85}
             >
-              <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>Tamam</Text>
+              <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>{t('profile.ok')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -2887,7 +2897,7 @@ export default function ProfilScreen() {
                 }}
                 activeOpacity={0.85}
               >
-                <Text style={{ color: '#374151', fontSize: 15, fontWeight: '700' }}>Vazgeç</Text>
+                <Text style={{ color: '#374151', fontSize: 15, fontWeight: '700' }}>{t('profile.keep')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => confirmModal?.rezervasyon && handleIptalConfirm(confirmModal.rezervasyon)}
@@ -2902,7 +2912,7 @@ export default function ProfilScreen() {
                 activeOpacity={0.85}
               >
                 <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>
-                  {iptalLoading ? 'İptal ediliyor...' : 'Evet, İptal Et'}
+                  {iptalLoading ? t('profile.cancelling') : t('profile.yes_cancel')}
                 </Text>
               </TouchableOpacity>
             </View>
