@@ -16,6 +16,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg'
 import { useTranslation } from 'react-i18next'
+import { getLocalizedField } from '../../lib/getLocalizedField'
 import { supabase } from '../../lib/supabase'
 
 const SCREEN_W = Dimensions.get('window').width
@@ -113,8 +114,10 @@ type TesisDetailRow = {
   fotograflar: unknown
   puan: number | null
   kisa_aciklama: string | null
+  kisa_aciklama_en: string | null
   aciklama: string | null
   detayli_aciklama: string | null
+  detayli_aciklama_en: string | null
   imkanlar: unknown
   calisma_saatleri: unknown
   adres: string | null
@@ -279,6 +282,7 @@ function paramSlug(slug: string | string[] | undefined): string {
 export default function TesisDetailScreen() {
   const router = useRouter()
   const { t, i18n } = useTranslation()
+  const currentLang = i18n.language.startsWith('en') ? 'en' : 'tr'
   const weekdayShortLabels = useMemo((): readonly string[] => {
     const raw = t('facility.weekday_short', { returnObjects: true }) as unknown
     if (Array.isArray(raw) && raw.length === 7 && raw.every((x) => typeof x === 'string')) {
@@ -291,6 +295,14 @@ export default function TesisDetailScreen() {
   const slug = paramSlug(slugParam)
 
   const [row, setRow] = useState<TesisDetailRow | null>(null)
+  const localizedAboutKisa = useMemo(
+    () => (row ? getLocalizedField(row, 'kisa_aciklama', currentLang) : ''),
+    [row, currentLang],
+  )
+  const localizedAboutDetay = useMemo(
+    () => (row ? getLocalizedField(row, 'detayli_aciklama', currentLang) : ''),
+    [row, currentLang],
+  )
   const [loading, setLoading] = useState(true)
   const [galleryIndex, setGalleryIndex] = useState(0)
   const [isFavori, setIsFavori] = useState(false)
@@ -346,7 +358,7 @@ export default function TesisDetailScreen() {
     void supabase
       .from('tesisler')
       .select(
-        'id, ad, slug, sehir, ilce, fotograflar, puan, kisa_aciklama, aciklama, detayli_aciklama, imkanlar, calisma_saatleri, adres, video_url, ulasim, kurallar, kampanya_notlari, telefon, iletisim_numarasi, enlem, boylam',
+        'id, ad, slug, sehir, ilce, fotograflar, puan, kisa_aciklama, kisa_aciklama_en, aciklama, detayli_aciklama, detayli_aciklama_en, imkanlar, calisma_saatleri, adres, video_url, ulasim, kurallar, kampanya_notlari, telefon, iletisim_numarasi, enlem, boylam',
       )
       .eq('slug', slug)
       .maybeSingle()
@@ -908,27 +920,27 @@ export default function TesisDetailScreen() {
             </TouchableOpacity>
             {acikHakkinda && (
               <View style={{ marginTop: 12 }}>
-                {row.kisa_aciklama && String(row.kisa_aciklama).trim() ? (
-                  <Text style={styles.bodyText}>{row.kisa_aciklama}</Text>
+                {localizedAboutKisa.trim() ? (
+                  <Text style={styles.bodyText}>{localizedAboutKisa}</Text>
                 ) : null}
-                {row.detayli_aciklama && String(row.detayli_aciklama).trim() ? (
+                {localizedAboutDetay.trim() ? (
                   <Text
                     style={[
                       styles.bodyText,
-                      row.kisa_aciklama && String(row.kisa_aciklama).trim() ? { marginTop: 8 } : null,
+                      localizedAboutKisa.trim() ? { marginTop: 8 } : null,
                     ]}
                   >
-                    {row.detayli_aciklama}
+                    {localizedAboutDetay}
                   </Text>
                 ) : null}
-                {!row.kisa_aciklama?.trim() &&
-                !row.detayli_aciklama?.trim() &&
+                {!localizedAboutKisa.trim() &&
+                !localizedAboutDetay.trim() &&
                 row.aciklama &&
                 String(row.aciklama).trim() ? (
                   <Text style={styles.bodyText}>{row.aciklama}</Text>
                 ) : null}
-                {!row.kisa_aciklama?.trim() &&
-                !row.detayli_aciklama?.trim() &&
+                {!localizedAboutKisa.trim() &&
+                !localizedAboutDetay.trim() &&
                 !row.aciklama?.trim() ? (
                   <Text style={styles.bodyText}>{t('facility.no_description')}</Text>
                 ) : null}
