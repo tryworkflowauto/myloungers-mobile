@@ -13,6 +13,15 @@
     "search": "Ara",
     "default_user_name": "Kullanıcı"
   },
+  "days_short_map": {
+    "Pzt": "Pzt",
+    "Sal": "Sal",
+    "Çar": "Çar",
+    "Per": "Per",
+    "Cum": "Cum",
+    "Cmt": "Cmt",
+    "Paz": "Paz"
+  },
   "login": {
     "placeholderEmail": "Kullanıcı adı / E-posta",
     "placeholderPassword": "******",

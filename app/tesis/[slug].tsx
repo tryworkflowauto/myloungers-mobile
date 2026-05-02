@@ -57,12 +57,14 @@ function yorumBarPct(avg: number | null): number {
 type GrupRow = {
   id: string
   ad: string
+  ad_en?: string | null
   renk: string
   fiyat: number | null
   fiyat_hafici: number | null
   fiyat_hafta_sonu: number | null
   sira: number | null
   aciklama: string | null
+  aciklama_en?: string | null
   deniz_sirasi: number | null
 }
 
@@ -161,7 +163,11 @@ function parseImkanlarWithEmoji(raw: unknown): ImkanListItem[] {
     .filter((x: ImkanListItem) => x.name)
 }
 
-function parseCalismaSaatleriLines(raw: unknown, closedLabel: string): string[] {
+function parseCalismaSaatleriLines(
+  raw: unknown,
+  closedLabel: string,
+  translateDay: (name: string) => string,
+): string[] {
   if (raw == null) return []
   if (typeof raw === 'string') {
     const t = raw.trim()
@@ -176,7 +182,8 @@ function parseCalismaSaatleriLines(raw: unknown, closedLabel: string): string[] 
       .map((item) => {
         if (!item || typeof item !== 'object') return ''
         const obj = item as Record<string, unknown>
-        const name = String(obj.name ?? '')
+        const rawName = String(obj.name ?? '').trim()
+        const name = rawName ? translateDay(rawName) : ''
         const kapali = obj.kapali === true
         if (kapali) return `${name}: ${closedLabel}`
         const acilis = String(obj.acilis ?? '')
@@ -444,7 +451,7 @@ export default function TesisDetailScreen() {
     console.log('tesis id:', row?.id)
     void supabase
       .from('sezlong_gruplari')
-      .select('id, ad, renk, fiyat, fiyat_hafici, fiyat_hafta_sonu, sira, aciklama, deniz_sirasi')
+      .select('id, ad, ad_en, renk, fiyat, fiyat_hafici, fiyat_hafta_sonu, sira, aciklama, aciklama_en, deniz_sirasi')
       .eq('tesis_id', row.id)
       .order('sira', { ascending: true })
       .then(({ data }) => {
@@ -677,7 +684,11 @@ export default function TesisDetailScreen() {
 
   const photoUrls = row ? parsePhotoSrcs(row.fotograflar) : []
   const imkanList = row ? parseImkanlarWithEmoji(row.imkanlar) : []
-  const calismaLines = row ? parseCalismaSaatleriLines(row.calisma_saatleri, t('facility.closed')) : []
+  const calismaLines = row
+    ? parseCalismaSaatleriLines(row.calisma_saatleri, t('facility.closed'), (name) =>
+        t(`days_short_map.${name}`, { defaultValue: name }),
+      )
+    : []
   const tesisVideoUrlTrimmed = useMemo(() => row?.video_url?.trim() || null, [row?.video_url])
   const ulasimFields = useMemo(() => {
     if (row?.ulasim == null) return null
@@ -1241,10 +1252,12 @@ export default function TesisDetailScreen() {
                       }}
                     >
                       <View style={{ flex: 1, paddingRight: 8 }}>
-                        <Text style={{ fontSize: 13, fontWeight: '800', color: '#fff' }}>{grup.ad}</Text>
-                        {grup.aciklama ? (
+                        <Text style={{ fontSize: 13, fontWeight: '800', color: '#fff' }}>
+                          {getLocalizedField(grup, 'ad', currentLang)}
+                        </Text>
+                        {getLocalizedField(grup, 'aciklama', currentLang).trim() ? (
                           <Text style={{ fontSize: 10, color: '#fff', opacity: 0.8, marginTop: 2 }}>
-                            {grup.aciklama}
+                            {getLocalizedField(grup, 'aciklama', currentLang)}
                           </Text>
                         ) : null}
                       </View>
