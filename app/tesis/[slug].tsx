@@ -202,7 +202,9 @@ function parsePhotoSrcs(fotograflar: unknown): string[] {
   return out
 }
 
-function parseKuralKampanyaItems(raw: unknown): { text: string; emoji: string }[] {
+type KuralKampanyaListItem = { text: string; text_en?: string; emoji: string }
+
+function parseKuralKampanyaItems(raw: unknown): KuralKampanyaListItem[] {
   if (raw == null) return []
   const arr = Array.isArray(raw)
     ? raw
@@ -219,7 +221,10 @@ function parseKuralKampanyaItems(raw: unknown): { text: string; emoji: string }[
     .map((obj) => {
       const text = String(obj.text ?? '').trim()
       const emoji = typeof obj.emoji === 'string' ? obj.emoji : ''
-      return { text, emoji }
+      const text_en_raw = obj.text_en
+      const text_en =
+        typeof text_en_raw === 'string' && text_en_raw.trim().length > 0 ? text_en_raw.trim() : undefined
+      return { text, emoji, ...(text_en !== undefined ? { text_en } : {}) }
     })
     .filter((x) => x.text)
 }
@@ -1621,7 +1626,9 @@ export default function TesisDetailScreen() {
                           }}
                         >
                           {item.emoji ? <Text style={{ fontSize: 16 }}>{item.emoji}</Text> : null}
-                          <Text style={{ fontSize: 12, color: '#334155', flex: 1 }}>{item.text}</Text>
+                          <Text style={{ fontSize: 12, color: '#334155', flex: 1 }}>
+                            {getLocalizedField(item, 'text', currentLang)}
+                          </Text>
                         </View>
                       ))}
                     </View>
@@ -1651,7 +1658,9 @@ export default function TesisDetailScreen() {
                           }}
                         >
                           {item.emoji ? <Text style={{ fontSize: 16 }}>{item.emoji}</Text> : null}
-                          <Text style={{ fontSize: 12, color: '#334155', flex: 1 }}>{item.text}</Text>
+                          <Text style={{ fontSize: 12, color: '#334155', flex: 1 }}>
+                            {getLocalizedField(item, 'text', currentLang)}
+                          </Text>
                         </View>
                       ))}
                     </View>
