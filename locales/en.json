@@ -22,6 +22,24 @@
     "Cmt": "Sat",
     "Paz": "Sun"
   },
+  "review_form": {
+    "title": "Write a Review",
+    "rating_label": "Overall Rating",
+    "comment_label": "Your Review",
+    "comment_placeholder": "Share your experience...",
+    "subratings_title": "Detailed Rating (Optional)",
+    "location": "Location",
+    "cleanliness": "Cleanliness",
+    "service": "Service",
+    "price": "Price",
+    "submit": "Submit Review",
+    "login_required": "Please log in to write a review",
+    "login_button": "Log In",
+    "error_no_rating": "Please give a rating",
+    "error_no_text": "Please write a review",
+    "error_login": "Please log in",
+    "success": "Your review has been submitted, awaiting approval"
+  },
   "login": {
     "placeholderEmail": "Username / E-mail",
     "placeholderPassword": "******",

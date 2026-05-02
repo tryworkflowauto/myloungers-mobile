@@ -4,12 +4,15 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
+  Alert,
   Dimensions,
   Linking,
   Modal,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native'
@@ -108,6 +111,59 @@ type YorumRow = {
   dogrulanmis: boolean | null
   isletme_cevabi: string | null
   created_at: string
+}
+
+const YORUM_ONAYLI_SELECT =
+  'id, musteri_adi, puan, yorum, konum_puan, temizlik_puan, hizmet_puan, fiyat_puan, dogrulanmis, isletme_cevabi, created_at'
+
+async function fetchOnayliYorumlarForTesis(tesisId: string): Promise<{ list: YorumRow[]; count: number }> {
+  const [listRes, countRes] = await Promise.all([
+    supabase
+      .from('yorumlar')
+      .select(YORUM_ONAYLI_SELECT)
+      .eq('tesis_id', tesisId)
+      .eq('durum', 'onaylı')
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('yorumlar')
+      .select('id', { count: 'exact' })
+      .eq('tesis_id', tesisId)
+      .eq('durum', 'onaylı'),
+  ])
+  return {
+    list: (listRes.data ?? []) as YorumRow[],
+    count: countRes.count ?? 0,
+  }
+}
+
+function StarRatingInput({
+  value,
+  onChange,
+  size,
+}: {
+  value: number
+  onChange: (n: number) => void
+  size: number
+}) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+      {[1, 2, 3, 4, 5].map((s) => (
+        <Pressable
+          key={s}
+          onPress={() => onChange(s)}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={`${s}`}
+        >
+          <Ionicons
+            name={s <= value ? 'star' : 'star-outline'}
+            size={size}
+            color={s <= value ? '#f59e0b' : '#d1d5db'}
+          />
+        </Pressable>
+      ))}
+    </View>
+  )
 }
 
 type TesisDetailRow = {
@@ -357,6 +413,14 @@ export default function TesisDetailScreen() {
   const [menuSeciliKategori, setMenuSeciliKategori] = useState<'all' | string>('all')
   const [yorumlarList, setYorumlarList] = useState<YorumRow[]>([])
   const [acikYorumlar, setAcikYorumlar] = useState(false)
+  const [reviewFormYorum, setReviewFormYorum] = useState('')
+  const [reviewFormPuan, setReviewFormPuan] = useState(0)
+  const [reviewFormKonum, setReviewFormKonum] = useState(0)
+  const [reviewFormTemizlik, setReviewFormTemizlik] = useState(0)
+  const [reviewFormHizmet, setReviewFormHizmet] = useState(0)
+  const [reviewFormFiyat, setReviewFormFiyat] = useState(0)
+  const [reviewSubmitting, setReviewSubmitting] = useState(false)
+  const [reviewAuthUserId, setReviewAuthUserId] = useState<string | null>(null)
   const [acikPlan, setAcikPlan] = useState(false)
   const [rezButtonLoading, setRezButtonLoading] = useState(false)
   const [validUyariVisible, setValidUyariVisible] = useState(false)
@@ -396,23 +460,6 @@ export default function TesisDetailScreen() {
       cancelled = true
     }
   }, [slug])
-
-  useEffect(() => {
-    if (!row?.id) return
-    let cancelled = false
-    void supabase
-      .from('yorumlar')
-      .select('id', { count: 'exact' })
-      .eq('tesis_id', row.id)
-      .eq('durum', 'onaylı')
-      .then(({ count }) => {
-        if (cancelled) return
-        setYorumSayisi(count ?? 0)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [row?.id])
 
   useEffect(() => {
     if (!row?.id) {
@@ -515,21 +562,15 @@ export default function TesisDetailScreen() {
   useEffect(() => {
     if (!row?.id) {
       setYorumlarList([])
+      setYorumSayisi(0)
       return
     }
     let cancelled = false
-    void supabase
-      .from('yorumlar')
-      .select(
-        'id, musteri_adi, puan, yorum, konum_puan, temizlik_puan, hizmet_puan, fiyat_puan, dogrulanmis, isletme_cevabi, created_at',
-      )
-      .eq('tesis_id', row.id)
-      .eq('durum', 'onaylı')
-      .order('created_at', { ascending: false })
-      .then(({ data }) => {
-        if (cancelled) return
-        setYorumlarList((data ?? []) as YorumRow[])
-      })
+    void fetchOnayliYorumlarForTesis(row.id).then(({ list, count }) => {
+      if (cancelled) return
+      setYorumlarList(list)
+      setYorumSayisi(count)
+    })
     return () => {
       cancelled = true
     }
@@ -631,6 +672,10 @@ export default function TesisDetailScreen() {
   useFocusEffect(
     useCallback(() => {
       setRezButtonLoading(false)
+      void (async () => {
+        const { data } = await supabase.auth.getUser()
+        setReviewAuthUserId(data.user?.id ?? null)
+      })()
     }, []),
   )
 
@@ -718,6 +763,88 @@ export default function TesisDetailScreen() {
       .map((k) => ({ kategori: k, urunler: map.get(k.id) ?? [] }))
       .filter((g) => g.urunler.length > 0)
   }, [menuKategoriler, menuUrunler, menuSeciliKategori])
+  const handleYorumGonder = useCallback(async () => {
+    if (!row?.id) return
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    if (!user) {
+      Alert.alert('', t('review_form.error_login'))
+      return
+    }
+    if (reviewFormPuan === 0) {
+      Alert.alert('', t('review_form.error_no_rating'))
+      return
+    }
+    const yorumText = reviewFormYorum.trim()
+    if (!yorumText) {
+      Alert.alert('', t('review_form.error_no_text'))
+      return
+    }
+    setReviewSubmitting(true)
+    try {
+      const { data: kullanici } = await supabase
+        .from('kullanicilar')
+        .select('ad, soyad')
+        .eq('id', user.id)
+        .maybeSingle()
+      const ku = kullanici as { ad?: string | null; soyad?: string | null } | null
+      const adSoyad = ku ? `${ku.ad ?? ''} ${ku.soyad ?? ''}`.trim() : ''
+      const p = reviewFormPuan
+      const { error } = await supabase.from('yorumlar').insert({
+        tesis_id: row.id,
+        kullanici_id: user.id,
+        musteri_adi: adSoyad || 'Misafir',
+        yorum: yorumText,
+        puan: p,
+        konum_puan: reviewFormKonum || p,
+        temizlik_puan: reviewFormTemizlik || p,
+        hizmet_puan: reviewFormHizmet || p,
+        fiyat_puan: reviewFormFiyat || p,
+        durum: 'bekliyor',
+        dogrulanmis: false,
+      })
+      if (error) {
+        Alert.alert('', error.message)
+        return
+      }
+      const { data: tumYorumlar } = await supabase
+        .from('yorumlar')
+        .select('puan')
+        .eq('tesis_id', row.id)
+        .eq('durum', 'onaylı')
+      if (tumYorumlar && tumYorumlar.length > 0) {
+        const ortalama =
+          tumYorumlar.reduce((acc, y) => acc + (Number(y.puan) || 0), 0) / tumYorumlar.length
+        await supabase
+          .from('tesisler')
+          .update({ puan: Math.round(ortalama * 10) / 10, yorum_sayisi: tumYorumlar.length })
+          .eq('id', row.id)
+      }
+      const refreshed = await fetchOnayliYorumlarForTesis(row.id)
+      setYorumlarList(refreshed.list)
+      setYorumSayisi(refreshed.count)
+      setReviewFormYorum('')
+      setReviewFormPuan(0)
+      setReviewFormKonum(0)
+      setReviewFormTemizlik(0)
+      setReviewFormHizmet(0)
+      setReviewFormFiyat(0)
+      Alert.alert('', t('review_form.success'))
+    } finally {
+      setReviewSubmitting(false)
+    }
+  }, [
+    row?.id,
+    reviewFormYorum,
+    reviewFormPuan,
+    reviewFormKonum,
+    reviewFormTemizlik,
+    reviewFormHizmet,
+    reviewFormFiyat,
+    t,
+  ])
+
   const yorumOzet = useMemo(() => {
     const list = yorumlarList
     if (list.length === 0) {
@@ -1881,6 +2008,133 @@ export default function TesisDetailScreen() {
             </TouchableOpacity>
             {acikYorumlar && (
               <View style={{ marginTop: 12 }}>
+                {reviewAuthUserId ? (
+                  <View
+                    style={{
+                      marginBottom: 16,
+                      padding: 14,
+                      borderRadius: 12,
+                      backgroundColor: '#f8fafc',
+                      borderWidth: StyleSheet.hairlineWidth,
+                      borderColor: '#e2e8f0',
+                    }}
+                  >
+                    <Text style={{ fontSize: 15, fontWeight: '700', color: '#0A1628', marginBottom: 12 }}>
+                      {t('review_form.title')}
+                    </Text>
+                    <Text style={{ fontSize: 12, fontWeight: '600', color: '#64748b', marginBottom: 6 }}>
+                      {t('review_form.rating_label')} *
+                    </Text>
+                    <StarRatingInput value={reviewFormPuan} onChange={setReviewFormPuan} size={24} />
+                    <Text style={{ fontSize: 12, fontWeight: '600', color: '#64748b', marginTop: 14, marginBottom: 6 }}>
+                      {t('review_form.comment_label')} *
+                    </Text>
+                    <TextInput
+                      value={reviewFormYorum}
+                      onChangeText={setReviewFormYorum}
+                      placeholder={t('review_form.comment_placeholder')}
+                      placeholderTextColor="#94a3b8"
+                      multiline
+                      textAlignVertical="top"
+                      style={{
+                        minHeight: 96,
+                        borderWidth: 1,
+                        borderColor: '#e2e8f0',
+                        borderRadius: 10,
+                        paddingHorizontal: 12,
+                        paddingVertical: 10,
+                        fontSize: 14,
+                        color: '#0A1628',
+                        backgroundColor: '#fff',
+                      }}
+                    />
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        fontWeight: '600',
+                        color: '#64748b',
+                        marginTop: 14,
+                        marginBottom: 8,
+                      }}
+                    >
+                      {t('review_form.subratings_title')}
+                    </Text>
+                    <View style={{ gap: 10 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Text style={{ fontSize: 12, color: '#475569', fontWeight: '600' }}>
+                          {t('review_form.location')}
+                        </Text>
+                        <StarRatingInput value={reviewFormKonum} onChange={setReviewFormKonum} size={16} />
+                      </View>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Text style={{ fontSize: 12, color: '#475569', fontWeight: '600' }}>
+                          {t('review_form.cleanliness')}
+                        </Text>
+                        <StarRatingInput value={reviewFormTemizlik} onChange={setReviewFormTemizlik} size={16} />
+                      </View>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Text style={{ fontSize: 12, color: '#475569', fontWeight: '600' }}>
+                          {t('review_form.service')}
+                        </Text>
+                        <StarRatingInput value={reviewFormHizmet} onChange={setReviewFormHizmet} size={16} />
+                      </View>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Text style={{ fontSize: 12, color: '#475569', fontWeight: '600' }}>
+                          {t('review_form.price')}
+                        </Text>
+                        <StarRatingInput value={reviewFormFiyat} onChange={setReviewFormFiyat} size={16} />
+                      </View>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => void handleYorumGonder()}
+                      disabled={reviewSubmitting}
+                      activeOpacity={0.85}
+                      style={{
+                        marginTop: 16,
+                        backgroundColor: reviewSubmitting ? '#94a3b8' : '#0ABAB5',
+                        paddingVertical: 12,
+                        borderRadius: 10,
+                        alignItems: 'center',
+                      }}
+                    >
+                      {reviewSubmitting ? (
+                        <ActivityIndicator color="#fff" />
+                      ) : (
+                        <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff' }}>{t('review_form.submit')}</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <View
+                    style={{
+                      marginBottom: 16,
+                      padding: 14,
+                      borderRadius: 12,
+                      backgroundColor: '#f8fafc',
+                      borderWidth: StyleSheet.hairlineWidth,
+                      borderColor: '#e2e8f0',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <Text style={{ fontSize: 14, color: '#64748b', textAlign: 'center', marginBottom: 10 }}>
+                      {t('review_form.login_required')}
+                    </Text>
+                    <TouchableOpacity
+                      onPress={() => router.push('/giris')}
+                      activeOpacity={0.85}
+                      style={{
+                        backgroundColor: '#0ABAB5',
+                        paddingVertical: 10,
+                        paddingHorizontal: 20,
+                        borderRadius: 10,
+                      }}
+                    >
+                      <Text style={{ fontSize: 14, fontWeight: '700', color: '#fff' }}>
+                        {t('review_form.login_button')}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
                 {yorumlarList.length === 0 ? (
                   <Text style={{ fontSize: 14, color: '#64748b', textAlign: 'center' }}>{t('facility.no_reviews')}</Text>
                 ) : (

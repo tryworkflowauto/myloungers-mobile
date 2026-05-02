@@ -22,6 +22,24 @@
     "Cmt": "Cmt",
     "Paz": "Paz"
   },
+  "review_form": {
+    "title": "Yorum Yaz",
+    "rating_label": "Genel Puan",
+    "comment_label": "Yorumunuz",
+    "comment_placeholder": "Deneyiminizi paylaşın...",
+    "subratings_title": "Detaylı Puanlama (Opsiyonel)",
+    "location": "Konum",
+    "cleanliness": "Temizlik",
+    "service": "Hizmet",
+    "price": "Fiyat",
+    "submit": "Yorumu Gönder",
+    "login_required": "Yorum yapmak için giriş yapmalısınız",
+    "login_button": "Giriş Yap",
+    "error_no_rating": "Lütfen puan verin",
+    "error_no_text": "Lütfen yorum yazın",
+    "error_login": "Giriş yapmalısınız",
+    "success": "Yorumunuz gönderildi, onay bekliyor"
+  },
   "login": {
     "placeholderEmail": "Kullanıcı adı / E-posta",
     "placeholderPassword": "******",
