@@ -7,6 +7,7 @@ import {
   BackHandler,
   Image,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   ScrollView,
@@ -22,6 +23,11 @@ import { supabase } from '@/lib/supabase'
 
 const TEAL = '#0d9488'
 const ORANGE = '#F5821F'
+
+const LEGAL_URLS = {
+  terms: 'https://myloungers.com/kullanim-kosullari',
+  kvkk: 'https://myloungers.com/kvkk',
+} as const
 
 function parseMoney(s: string | undefined): number {
   if (s == null || s === '') return 0
@@ -679,17 +685,44 @@ export default function RezervasyonOzet() {
                     {/* ── KVKK tek kere, son kişi formunun altında ── */}
                     {isLast && (
                       <>
-                        <TouchableOpacity
-                          style={[styles.kvkkRow, kvkkErr && styles.kvkkRowErr]}
-                          onPress={() => { setKvkk((v) => !v); setKvkkErr(false) }}
-                          activeOpacity={0.8}
-                          accessibilityRole="checkbox"
-                        >
-                          <View style={[styles.kvkkBox, kvkk && styles.kvkkBoxChecked]}>
-                            {kvkk && <Ionicons name="checkmark" size={13} color="#fff" />}
-                          </View>
-                          <Text style={styles.kvkkText}>{t('reservation.kvkk_consent')}</Text>
-                        </TouchableOpacity>
+                        <View style={[styles.kvkkRow, kvkkErr && styles.kvkkRowErr]}>
+                          <TouchableOpacity
+                            onPress={() => {
+                              setKvkk((v) => !v)
+                              setKvkkErr(false)
+                            }}
+                            activeOpacity={0.8}
+                            accessibilityRole="checkbox"
+                            accessibilityState={{ checked: kvkk }}
+                            accessibilityLabel={t('reservation.kvkk_consent')}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          >
+                            <View style={[styles.kvkkBox, kvkk && styles.kvkkBoxChecked]}>
+                              {kvkk && <Ionicons name="checkmark" size={13} color="#fff" />}
+                            </View>
+                          </TouchableOpacity>
+                          <Text style={styles.kvkkText}>
+                            {t('reservation.kvkk_text_prefix')}
+                            <Text
+                              onPress={() => {
+                                void Linking.openURL(LEGAL_URLS.terms)
+                              }}
+                              style={styles.kvkkLink}
+                            >
+                              {t('reservation.kvkk_terms_link')}
+                            </Text>
+                            {t('reservation.kvkk_text_between')}
+                            <Text
+                              onPress={() => {
+                                void Linking.openURL(LEGAL_URLS.kvkk)
+                              }}
+                              style={styles.kvkkLink}
+                            >
+                              {t('reservation.kvkk_link')}
+                            </Text>
+                            {t('reservation.kvkk_text_suffix')}
+                          </Text>
+                        </View>
                         {kvkkErr && (
                           <Text style={styles.kvkkErrText}>{t('reservation.consent_required')}</Text>
                         )}
@@ -987,6 +1020,13 @@ const styles = StyleSheet.create({
   },
   kvkkBoxChecked: { backgroundColor: TEAL, borderColor: TEAL },
   kvkkText: { flex: 1, fontSize: 12, color: '#1e40af', lineHeight: 18 },
+  kvkkLink: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: '#0ABAB5',
+    fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
   kvkkErrText: { fontSize: 12, color: '#dc2626', marginTop: 6 },
 
   // Footer
