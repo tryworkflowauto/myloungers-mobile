@@ -16,6 +16,7 @@
     "ios": {
       "icon": "./assets/images/icon.png",
       "bundleIdentifier": "com.myloungers.app",
+      "buildNumber": "1",
       "supportsTablet": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
@@ -28,6 +29,7 @@
     },
     "android": {
       "package": "com.myloungers.app",
+      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#2226f7",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
