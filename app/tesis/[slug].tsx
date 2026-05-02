@@ -131,7 +131,9 @@ type TesisDetailRow = {
   boylam: number | null
 }
 
-function parseImkanlarWithEmoji(raw: unknown): { name: string; emoji: string }[] {
+type ImkanListItem = { name: string; name_en?: string; emoji: string }
+
+function parseImkanlarWithEmoji(raw: unknown): ImkanListItem[] {
   if (raw == null) return []
   const arr = Array.isArray(raw)
     ? raw
@@ -148,9 +150,12 @@ function parseImkanlarWithEmoji(raw: unknown): { name: string; emoji: string }[]
       const obj = x as Record<string, unknown>
       const name = String(obj.name ?? obj.ad ?? '')
       const emoji = typeof obj.emoji === 'string' ? obj.emoji : ''
-      return { name, emoji }
+      const name_en_raw = obj.name_en
+      const name_en =
+        typeof name_en_raw === 'string' && name_en_raw.trim().length > 0 ? name_en_raw : undefined
+      return { name, ...(name_en !== undefined ? { name_en } : {}), emoji }
     })
-    .filter((x: { name: string; emoji: string }) => x.name)
+    .filter((x: ImkanListItem) => x.name)
 }
 
 function parseCalismaSaatleriLines(raw: unknown, closedLabel: string): string[] {
@@ -991,7 +996,7 @@ export default function TesisDetailScreen() {
                       >
                         <Text style={{ fontSize: 16 }}>{item.emoji}</Text>
                         <Text style={{ fontSize: 12, color: '#334155', flex: 1 }} numberOfLines={2}>
-                          {item.name}
+                          {getLocalizedField(item, 'name', currentLang)}
                         </Text>
                       </View>
                     ))}
