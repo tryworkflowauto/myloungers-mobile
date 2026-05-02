@@ -90,25 +90,37 @@ function firstPhotoSrc(fotograflar: unknown): string | null {
   return typeof first?.src === 'string' ? first.src : null
 }
 
-function parseImkanlar(raw: unknown): string[] {
-  if (raw == null) return []
-  if (Array.isArray(raw)) {
-    return raw
-      .map((x) => {
-        if (typeof x === 'string') return x
-        if (x && typeof x === 'object' && 'ad' in x) return String((x as { ad: string }).ad)
-        if (x && typeof x === 'object' && 'name' in x) return String((x as { name: string }).name)
-        return ''
+function parseImkanlar(raw: unknown, lang: 'tr' | 'en'): string[] {
+  const normalize = (items: unknown[]): string[] =>
+    items
+      .map((item) => {
+        if (typeof item === 'string') {
+          const s = item.trim()
+          return s || null
+        }
+        if (!item || typeof item !== 'object') return null
+        const obj = item as Record<string, unknown>
+        if (obj.active === false) return null
+        const nameRaw = obj.name ?? obj.ad ?? ''
+        const name = String(nameRaw).trim()
+        const name_en_raw = obj.name_en
+        const name_en = typeof name_en_raw === 'string' ? name_en_raw.trim() : ''
+        if (lang === 'en' && name_en.length > 0) return name_en
+        if (name.length > 0) return name
+        return null
       })
-      .filter(Boolean)
+      .filter((s): s is string => s != null && s.length > 0)
       .slice(0, 6)
-  }
+
+  if (raw == null) return []
+  if (Array.isArray(raw)) return normalize(raw)
   if (typeof raw === 'string') {
     try {
       const p = JSON.parse(raw) as unknown
-      return parseImkanlar(p)
+      return parseImkanlar(p, lang)
     } catch {
-      return raw ? [raw] : []
+      const t = raw.trim()
+      return t ? [t].slice(0, 6) : []
     }
   }
   return []
@@ -202,6 +214,7 @@ function ReviewsSection() {
 export default function HomeScreen() {
   const router = useRouter()
   const { t, i18n } = useTranslation()
+  const currentLang = i18n.language.startsWith('en') ? 'en' : 'tr'
   const isTr = i18n.language.startsWith('tr')
   const isEn = i18n.language.startsWith('en')
   const [rows, setRows] = useState<TesisRow[]>([])
@@ -576,7 +589,7 @@ export default function HomeScreen() {
   const renderFacilityCard = (item: TesisRow) => {
     const src = firstPhotoSrc(item.fotograflar)
     const konum = [item.sehir, item.ilce].filter(Boolean).join(', ')
-    const tags = parseImkanlar(item.imkanlar)
+    const tags = parseImkanlar(item.imkanlar, currentLang)
     const fav = favorites[item.id]
     return (
       <View key={item.id} style={styles.popCard}>
