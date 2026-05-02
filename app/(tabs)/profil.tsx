@@ -1526,7 +1526,7 @@ export default function ProfilScreen() {
                           </TouchableOpacity>
                         </View>
 
-                        {/* 2. satır: Tesise Git (full width) */}
+                        {/* Row 2: full-width go-to-facility button */}
                         <TouchableOpacity
                           activeOpacity={0.85}
                           style={{
@@ -1874,7 +1874,7 @@ export default function ProfilScreen() {
                       activeOpacity={0.85}
                       onPress={() => router.push(`/tesis/${r.tesisler?.slug}`)}
                     >
-                      <Text style={styles.btnTesiseGitText}>Şezlong Seç →</Text>
+                      <Text style={styles.btnTesiseGitText}>{`${t('facility.select_sunbed')} →`}</Text>
                     </TouchableOpacity>
                   </View>
                 </View>

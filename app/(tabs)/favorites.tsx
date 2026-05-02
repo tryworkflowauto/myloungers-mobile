@@ -128,7 +128,7 @@ export default function FavoritesScreen() {
                         if (slug) router.push(`/tesis/${slug}`)
                       }}
                     >
-                      <Text style={styles.goBtnText}>Tesise Git</Text>
+                      <Text style={styles.goBtnText}>{t('facility.visit_facility')}</Text>
                     </TouchableOpacity>
                   </View>
                 </View>

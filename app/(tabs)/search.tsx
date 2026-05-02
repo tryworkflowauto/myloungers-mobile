@@ -614,7 +614,9 @@ export default function SearchScreen() {
         <Pressable style={styles.modalBackdrop} onPress={() => setShowTypeModal(false)}>
           <Pressable style={styles.typeSheet} onPress={(e) => e.stopPropagation()}>
             <Text style={styles.typeSheetTitle}>{t('home.selectFacilityType')}</Text>
-            {typeOptions.map((o) => (
+            {typeOptions
+              .filter((o) => Boolean((o.label ?? '').trim()))
+              .map((o) => (
               <TouchableOpacity
                 key={o.key}
                 style={styles.typeOptionRow}
@@ -635,16 +637,6 @@ export default function SearchScreen() {
                 <Ionicons name="chevron-forward" size={16} color="#94a3b8" />
               </TouchableOpacity>
             ))}
-            <TouchableOpacity
-              style={styles.typeOptionRow}
-              onPress={() => {
-                setFacilityTypeKey(null)
-                setShowTypeModal(false)
-              }}
-              activeOpacity={0.85}
-            >
-              <Text style={[styles.typeOptionText, { opacity: 0.6 }]}>—</Text>
-            </TouchableOpacity>
           </Pressable>
         </Pressable>
       </Modal>
