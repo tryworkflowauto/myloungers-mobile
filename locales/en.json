@@ -76,7 +76,13 @@
     "alertFillAll": "Please fill in all fields.",
     "alertPasswordMismatch": "Passwords do not match.",
     "alertRegisterTitle": "Registration",
-    "alertRegisterBody": "Your account has been created. Please check your email."
+    "alertRegisterBody": "Your account has been created. Please check your email.",
+    "terms_consent": "I have read and accept the Terms of Use and Privacy Notice.",
+    "terms_link": "Terms of Use",
+    "kvkk_link": "Privacy Notice",
+    "terms_text_prefix": "I have read and accept the ",
+    "terms_text_between": " and ",
+    "terms_text_suffix": "."
   },
   "forgot": {
     "title": "Forgot password",
@@ -348,6 +354,13 @@
     "data_privacy": "Data and Privacy",
     "kvkk_description": "Information about your personal data",
     "view": "View",
+    "legal": {
+      "kvkk": "Privacy Notice",
+      "privacy": "Privacy Policy",
+      "terms": "Terms of Use",
+      "cookies": "Cookie Policy",
+      "refund": "Cancellation & Refund"
+    },
     "change_password_modal_title": "Change password",
     "current_password": "Current Password",
     "new_password": "New Password",
@@ -357,6 +370,17 @@
     "kvkk_title": "Personal Data Protection",
     "kvkk_body": "Your personal data is processed in accordance with data protection regulations. Your data is used only for reservation, payment, and service processes and is not shared with third parties.",
     "close": "Close",
+    "log_out": "Log out",
+    "delete_account": {
+      "button": "Delete My Account",
+      "title": "Delete Account?",
+      "warning": "This cannot be undone. Your profile information, reservations, reviews, and personal data will be permanently deleted. Data we must retain by law (e.g. invoices, payment records) may be kept for up to 10 years.",
+      "cancel": "Cancel",
+      "confirm": "Delete Account",
+      "success_title": "Deletion Request Received",
+      "success_body": "Your account and data will be permanently deleted within 7 business days. We will send a confirmation email.",
+      "error": "Something went wrong. Please write to info@myloungers.com."
+    },
     "profile_updated_check": "✓ Profile updated",
     "profile_updated_banner": "Profile updated!",
     "password_updated": "✓ Password updated",

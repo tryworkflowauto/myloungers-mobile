@@ -76,7 +76,13 @@
     "alertFillAll": "Lütfen tüm alanları doldurun.",
     "alertPasswordMismatch": "Şifreler eşleşmiyor.",
     "alertRegisterTitle": "Kayıt",
-    "alertRegisterBody": "Hesabınız oluşturuldu. E-postanızı kontrol edin."
+    "alertRegisterBody": "Hesabınız oluşturuldu. E-postanızı kontrol edin.",
+    "terms_consent": "Kullanım Koşulları'nı ve KVKK Aydınlatma Metni'ni okudum, onaylıyorum.",
+    "terms_link": "Kullanım Koşulları",
+    "kvkk_link": "KVKK Aydınlatma Metni",
+    "terms_text_prefix": "",
+    "terms_text_between": "'nı ve ",
+    "terms_text_suffix": "'ni okudum, onaylıyorum."
   },
   "forgot": {
     "title": "Şifremi Unuttum",
@@ -348,6 +354,13 @@
     "data_privacy": "Veri ve Gizlilik",
     "kvkk_description": "KVKK kapsamında kişisel verileriniz hakkında bilgi",
     "view": "Görüntüle",
+    "legal": {
+      "kvkk": "KVKK Aydınlatma Metni",
+      "privacy": "Gizlilik Politikası",
+      "terms": "Kullanım Koşulları",
+      "cookies": "Çerez Politikası",
+      "refund": "İptal ve İade"
+    },
     "change_password_modal_title": "Parola değiştir",
     "current_password": "Mevcut Parola",
     "new_password": "Yeni Parola",
@@ -357,6 +370,17 @@
     "kvkk_title": "KVKK Bilgilendirme",
     "kvkk_body": "Kişisel verileriniz, Kişisel Verilerin Korunması Kanunu kapsamında işlenmektedir. Verileriniz yalnızca rezervasyon, ödeme ve hizmet süreçleri için kullanılır ve üçüncü taraflarla paylaşılmaz.",
     "close": "Kapat",
+    "log_out": "Çıkış Yap",
+    "delete_account": {
+      "button": "Hesabımı Sil",
+      "title": "Hesabınızı Silmek İstiyor musunuz?",
+      "warning": "Bu işlem geri alınamaz; profil bilgileriniz, rezervasyonlarınız, yorumlarınız ve kişisel verileriniz kalıcı olarak silinecektir. Yasal saklama yükümlülüğü bulunan veriler (ör. fatura, ödeme kayıtları) ise yürürlükteki mevzuat gereği 10 yıla kadar saklanmaya devam edebilir.",
+      "cancel": "İptal",
+      "confirm": "Hesabımı Sil",
+      "success_title": "Hesap Silme Talebi Alındı",
+      "success_body": "Hesabınız ve verileriniz 7 iş günü içinde kalıcı olarak silinecektir. Onay e-postası göndereceğiz.",
+      "error": "Bir hata oluştu. Lütfen info@myloungers.com adresine yazın."
+    },
     "profile_updated_check": "✓ Profiliniz güncellendi",
     "profile_updated_banner": "Profiliniz güncellendi!",
     "password_updated": "✓ Parolanız güncellendi",

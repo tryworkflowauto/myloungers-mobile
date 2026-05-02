@@ -14,6 +14,7 @@ import {
     ActivityIndicator,
     Alert,
     Image,
+    Linking,
     Modal,
     RefreshControl,
     ScrollView,
@@ -146,6 +147,14 @@ function formatTutar(raw: number | string | null | undefined) {
   return `\u20BA${n.toLocaleString('tr-TR', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
 }
 
+const LEGAL_URLS = {
+  kvkk: 'https://myloungers.com/kvkk',
+  privacy: 'https://myloungers.com/gizlilik',
+  terms: 'https://myloungers.com/kullanim-kosullari',
+  cookies: 'https://myloungers.com/cerez-politikasi',
+  refund: 'https://myloungers.com/iptal-iade',
+} as const
+
 function formatSure(saniye: number): string {
   const dk = Math.floor(saniye / 60)
   const sn = saniye % 60
@@ -271,6 +280,8 @@ export default function ProfilScreen() {
   }, [])
   const [modalParola, setModalParola] = useState(false)
   const [modalKvkk, setModalKvkk] = useState(false)
+  const [modalHesapSil, setModalHesapSil] = useState(false)
+  const [silmeLoading, setSilmeLoading] = useState(false)
   const [mevcutParola, setMevcutParola] = useState('')
   const [yeniParola, setYeniParola] = useState('')
   const [yeniParolaTekrar, setYeniParolaTekrar] = useState('')
@@ -1020,6 +1031,40 @@ export default function ProfilScreen() {
   const handleCikis = async () => {
     await supabase.auth.signOut()
     router.replace('/giris')
+  }
+
+  const handleHesapSil = async () => {
+    setSilmeLoading(true)
+    try {
+      const {
+        data: { user },
+        error: userErr,
+      } = await supabase.auth.getUser()
+      if (userErr || !user?.id) {
+        throw new Error('user_not_found')
+      }
+
+      const { error: updateError } = await supabase
+        .from('kullanicilar')
+        .update({ silinme_talep_tarihi: new Date().toISOString() })
+        .eq('id', user.id)
+      if (updateError) {
+        throw updateError
+      }
+
+      const { error: signOutErr } = await supabase.auth.signOut()
+      if (signOutErr) {
+        throw signOutErr
+      }
+      setModalHesapSil(false)
+      Alert.alert(t('profile.delete_account.success_title'), t('profile.delete_account.success_body'), [
+        { text: t('common.ok'), onPress: () => router.replace('/giris') },
+      ])
+    } catch {
+      Alert.alert(t('common.errorTitle'), t('profile.delete_account.error'))
+    } finally {
+      setSilmeLoading(false)
+    }
   }
 
   const handleKaydetProfil = async () => {
@@ -2234,6 +2279,19 @@ export default function ProfilScreen() {
           </View>
         )}
 
+        <View style={{ marginHorizontal: 16, marginTop: 28, marginBottom: 32, gap: 12 }}>
+          <TouchableOpacity style={styles.btnCikisAlt} activeOpacity={0.85} onPress={() => void handleCikis()}>
+            <Text style={styles.btnCikisAltText}>{t('profile.log_out')}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.btnHesapSilAlt}
+            activeOpacity={0.85}
+            onPress={() => setModalHesapSil(true)}
+          >
+            <Text style={styles.btnHesapSilAltText}>{t('profile.delete_account.button')}</Text>
+          </TouchableOpacity>
+        </View>
+
       </ScrollView>
 
       <Modal visible={modalAyarlar} animationType="slide" transparent onRequestClose={() => setModalAyarlar(false)}>
@@ -2424,7 +2482,7 @@ export default function ProfilScreen() {
                     </View>
                   </View>
 
-                  <View style={[styles.guvenlikKart, { marginBottom: 0 }]}>
+                  <View style={styles.guvenlikKart}>
                     <View style={styles.guvenlikKartRow}>
                       <View style={styles.guvenlikKartSol}>
                         <Ionicons name="document-text-outline" size={22} color="#0A1628" />
@@ -2442,6 +2500,101 @@ export default function ProfilScreen() {
                       </TouchableOpacity>
                     </View>
                   </View>
+
+                  <TouchableOpacity
+                    style={styles.guvenlikKart}
+                    activeOpacity={0.85}
+                    accessibilityRole="link"
+                    onPress={() => {
+                      void Linking.openURL(LEGAL_URLS.kvkk)
+                    }}
+                  >
+                    <View style={styles.guvenlikKartRow}>
+                      <View style={styles.guvenlikKartSol}>
+                        <Ionicons name="document-text-outline" size={22} color="#0A1628" />
+                        <View style={styles.guvenlikKartMetin}>
+                          <Text style={styles.guvenlikKartTitle}>{t('profile.legal.kvkk')}</Text>
+                        </View>
+                      </View>
+                      <Ionicons name="open-outline" size={22} color="#64748b" />
+                    </View>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.guvenlikKart}
+                    activeOpacity={0.85}
+                    accessibilityRole="link"
+                    onPress={() => {
+                      void Linking.openURL(LEGAL_URLS.privacy)
+                    }}
+                  >
+                    <View style={styles.guvenlikKartRow}>
+                      <View style={styles.guvenlikKartSol}>
+                        <Ionicons name="document-text-outline" size={22} color="#0A1628" />
+                        <View style={styles.guvenlikKartMetin}>
+                          <Text style={styles.guvenlikKartTitle}>{t('profile.legal.privacy')}</Text>
+                        </View>
+                      </View>
+                      <Ionicons name="open-outline" size={22} color="#64748b" />
+                    </View>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.guvenlikKart}
+                    activeOpacity={0.85}
+                    accessibilityRole="link"
+                    onPress={() => {
+                      void Linking.openURL(LEGAL_URLS.terms)
+                    }}
+                  >
+                    <View style={styles.guvenlikKartRow}>
+                      <View style={styles.guvenlikKartSol}>
+                        <Ionicons name="document-text-outline" size={22} color="#0A1628" />
+                        <View style={styles.guvenlikKartMetin}>
+                          <Text style={styles.guvenlikKartTitle}>{t('profile.legal.terms')}</Text>
+                        </View>
+                      </View>
+                      <Ionicons name="open-outline" size={22} color="#64748b" />
+                    </View>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.guvenlikKart}
+                    activeOpacity={0.85}
+                    accessibilityRole="link"
+                    onPress={() => {
+                      void Linking.openURL(LEGAL_URLS.cookies)
+                    }}
+                  >
+                    <View style={styles.guvenlikKartRow}>
+                      <View style={styles.guvenlikKartSol}>
+                        <Ionicons name="document-text-outline" size={22} color="#0A1628" />
+                        <View style={styles.guvenlikKartMetin}>
+                          <Text style={styles.guvenlikKartTitle}>{t('profile.legal.cookies')}</Text>
+                        </View>
+                      </View>
+                      <Ionicons name="open-outline" size={22} color="#64748b" />
+                    </View>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.guvenlikKart, { marginBottom: 0 }]}
+                    activeOpacity={0.85}
+                    accessibilityRole="link"
+                    onPress={() => {
+                      void Linking.openURL(LEGAL_URLS.refund)
+                    }}
+                  >
+                    <View style={styles.guvenlikKartRow}>
+                      <View style={styles.guvenlikKartSol}>
+                        <Ionicons name="document-text-outline" size={22} color="#0A1628" />
+                        <View style={styles.guvenlikKartMetin}>
+                          <Text style={styles.guvenlikKartTitle}>{t('profile.legal.refund')}</Text>
+                        </View>
+                      </View>
+                      <Ionicons name="open-outline" size={22} color="#64748b" />
+                    </View>
+                  </TouchableOpacity>
                 </View>
               ) : null}
             </ScrollView>
@@ -2526,6 +2679,46 @@ export default function ProfilScreen() {
             >
               <Text style={styles.guvenlikModalBtnKaydetText}>{t('profile.close')}</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={modalHesapSil}
+        animationType="fade"
+        transparent
+        onRequestClose={() => {
+          if (!silmeLoading) setModalHesapSil(false)
+        }}
+      >
+        <View style={styles.guvenlikModalBackdrop}>
+          <View style={styles.guvenlikModalCard}>
+            <Text style={styles.guvenlikModalTitle}>{t('profile.delete_account.title')}</Text>
+            <ScrollView style={styles.guvenlikKvkkScroll} showsVerticalScrollIndicator={false}>
+              <Text style={styles.guvenlikKvkkBody}>{t('profile.delete_account.warning')}</Text>
+            </ScrollView>
+            <View style={[styles.guvenlikModalBtnRow, { justifyContent: 'space-between' }]}>
+              <TouchableOpacity
+                style={[styles.guvenlikModalBtnIptal, { flex: 1, alignItems: 'center' }]}
+                activeOpacity={0.85}
+                disabled={silmeLoading}
+                onPress={() => setModalHesapSil(false)}
+              >
+                <Text style={styles.guvenlikModalBtnIptalText}>{t('profile.delete_account.cancel')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.guvenlikModalBtnSil, { flex: 1, alignItems: 'center', opacity: silmeLoading ? 0.6 : 1 }]}
+                activeOpacity={0.85}
+                disabled={silmeLoading}
+                onPress={() => void handleHesapSil()}
+              >
+                {silmeLoading ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={styles.guvenlikModalBtnSilText}>{t('profile.delete_account.confirm')}</Text>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -3094,6 +3287,22 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   btnRezYapText: { color: '#fff', fontWeight: '800', fontSize: 15 },
+  btnCikisAlt: {
+    backgroundColor: '#0ABAB5',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  btnCikisAltText: { color: '#fff', fontWeight: '800', fontSize: 15 },
+  btnHesapSilAlt: {
+    backgroundColor: '#DC2626',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  btnHesapSilAltText: { color: '#fff', fontWeight: '800', fontSize: 15 },
   altSekmeBar: {
     marginHorizontal: 12,
     marginTop: 12,
@@ -3255,6 +3464,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   guvenlikModalBtnKaydetText: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  guvenlikModalBtnSil: {
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 10,
+    backgroundColor: '#DC2626',
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  guvenlikModalBtnSilText: { fontSize: 14, fontWeight: '700', color: '#fff' },
   guvenlikKvkkScroll: { maxHeight: 220, marginBottom: 16 },
   guvenlikKvkkBody: { fontSize: 14, color: '#475569', lineHeight: 22 },
   rezWebCard: {

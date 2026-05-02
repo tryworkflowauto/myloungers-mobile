@@ -1,10 +1,15 @@
 import { Ionicons } from '@expo/vector-icons'
 import { Link, useRouter } from 'expo-router'
 import { useState } from 'react'
-import { Alert, Image, ImageBackground, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import { Alert, Image, ImageBackground, Linking, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
 import { useTranslation } from 'react-i18next'
 import { changeLanguage } from '../lib/i18n'
 import { supabase } from '../lib/supabase'
+
+const LEGAL_URLS = {
+  terms: 'https://myloungers.com/kullanim-kosullari',
+  kvkk: 'https://myloungers.com/kvkk',
+} as const
 
 export default function RegisterScreen() {
   const router = useRouter()
@@ -16,8 +21,10 @@ export default function RegisterScreen() {
   const [password, setPassword] = useState('')
   const [passwordAgain, setPasswordAgain] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [acceptedTerms, setAcceptedTerms] = useState(false)
 
   const handleRegister = async () => {
+    if (!acceptedTerms) return
     const name = fullName.trim()
     const mail = email.trim()
     if (!name || !mail || !password) {
@@ -112,10 +119,42 @@ export default function RegisterScreen() {
                 style={styles.input}
               />
             </View>
+            <View style={styles.termsRow}>
+              <TouchableOpacity
+                style={[styles.termsCheckbox, acceptedTerms && styles.termsCheckboxChecked]}
+                activeOpacity={0.85}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: acceptedTerms }}
+                onPress={() => setAcceptedTerms((v) => !v)}
+              >
+                {acceptedTerms ? <Ionicons name="checkmark" size={14} color="#0ABAB5" /> : null}
+              </TouchableOpacity>
+              <Text style={styles.termsLegalText} accessibilityRole="text">
+                {t('register.terms_text_prefix')}
+                <Text
+                  onPress={() => {
+                    void Linking.openURL(LEGAL_URLS.terms)
+                  }}
+                  style={styles.termsLink}
+                >
+                  {t('register.terms_link')}
+                </Text>
+                {t('register.terms_text_between')}
+                <Text
+                  onPress={() => {
+                    void Linking.openURL(LEGAL_URLS.kvkk)
+                  }}
+                  style={styles.termsLink}
+                >
+                  {t('register.kvkk_link')}
+                </Text>
+                {t('register.terms_text_suffix')}
+              </Text>
+            </View>
             <TouchableOpacity
               onPress={handleRegister}
-              disabled={submitting}
-              style={[styles.saveBtn, submitting && styles.saveBtnDisabled]}
+              disabled={submitting || !acceptedTerms}
+              style={[styles.saveBtn, (submitting || !acceptedTerms) && styles.saveBtnDisabled]}
             >
               <Text style={styles.saveBtnText}>{t('register.save')}</Text>
             </TouchableOpacity>
@@ -162,6 +201,40 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   input: { flex: 1, fontSize: 13 },
+  termsRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginBottom: 12,
+    marginTop: 4,
+    paddingHorizontal: 2,
+  },
+  termsCheckbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    borderColor: '#94a3b8',
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+  },
+  termsCheckboxChecked: {
+    borderColor: '#94a3b8',
+  },
+  termsLegalText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#3333cc',
+    lineHeight: 18,
+  },
+  termsLink: {
+    fontSize: 12,
+    color: '#0ABAB5',
+    fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
   saveBtn: {
     alignSelf: 'center',
     borderWidth: 1.5,
