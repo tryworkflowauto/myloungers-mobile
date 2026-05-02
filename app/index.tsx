@@ -4,10 +4,15 @@ import * as AppleAuthentication from 'expo-apple-authentication'
 import * as Crypto from 'expo-crypto'
 import { Link, useRouter } from 'expo-router'
 import { useEffect, useState } from 'react'
-import { ActivityIndicator, Alert, Image, ImageBackground, Modal, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import { ActivityIndicator, Alert, Image, ImageBackground, Linking, Modal, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
 import { useTranslation } from 'react-i18next'
 import { changeLanguage } from '../lib/i18n'
 import { supabase } from '../lib/supabase'
+
+const LEGAL_URLS = {
+  terms: 'https://myloungers.com/kullanim-kosullari',
+  kvkk: 'https://myloungers.com/kvkk',
+} as const
 
 function mapLoginError(rawMsg: string, tFn: (key: string) => string): string {
   const lower = rawMsg.toLowerCase()
@@ -199,6 +204,36 @@ export default function LoginScreen() {
             </Link>
           </View>
 
+          <View style={styles.forgotInsideCard}>
+            <Link href="/forgot-password" style={styles.forgotBtn}>
+              <Text style={styles.forgotBtnText}>{t('login.forgotPassword')}</Text>
+            </Link>
+          </View>
+
+          <View style={styles.legalNotice}>
+            <Text style={styles.legalNoticeText}>
+              {t('login.legal_prefix')}
+              <Text
+                onPress={() => {
+                  void Linking.openURL(LEGAL_URLS.terms)
+                }}
+                style={styles.legalLink}
+              >
+                {t('login.legal_terms')}
+              </Text>
+              {t('login.legal_between')}
+              <Text
+                onPress={() => {
+                  void Linking.openURL(LEGAL_URLS.kvkk)
+                }}
+                style={styles.legalLink}
+              >
+                {t('login.legal_kvkk')}
+              </Text>
+              {t('login.legal_suffix')}
+            </Text>
+          </View>
+
           {/* iOS: Apple ile Giriş — Android: Google ile Giriş */}
           {Platform.OS === 'ios' ? (
             <TouchableOpacity
@@ -229,11 +264,6 @@ export default function LoginScreen() {
               <Text style={styles.googleBtnText}>{t('login.googleSignIn')}</Text>
             </TouchableOpacity>
           )}
-        </View>
-        <View style={styles.forgotWrapper}>
-          <Link href="/forgot-password" style={styles.forgotBtn}>
-              <Text style={styles.forgotBtnText}>{t('login.forgotPassword')}</Text>
-          </Link>
         </View>
       </View>
 
@@ -277,7 +307,10 @@ const styles = StyleSheet.create({
   registerBtnText: { color: '#F5821F', fontWeight: '600', fontSize: 15 },
   googleBtn: { flexDirection: 'row', borderWidth: 1.5, borderColor: '#dddddd', borderRadius: 30, paddingVertical: 8, alignItems: 'center', justifyContent: 'center', marginTop: 12, backgroundColor: 'white' },
   googleBtnText: { color: '#333333', fontWeight: '600', fontSize: 16 },
-  forgotWrapper: { alignItems: 'flex-end', paddingHorizontal: 20, marginTop: 10 },
+  forgotInsideCard: { alignSelf: 'flex-end', marginBottom: 8 },
+  legalNotice: { paddingHorizontal: 24, marginBottom: 12 },
+  legalNoticeText: { fontSize: 12, color: '#6B7280', textAlign: 'center', lineHeight: 18 },
+  legalLink: { fontSize: 12, color: '#0ABAB5', textDecorationLine: 'underline', fontWeight: '600', lineHeight: 18 },
   forgotBtn: { backgroundColor: '#3333cc', borderRadius: 30, paddingHorizontal: 18, paddingVertical: 8 },
   forgotBtnText: { color: 'white', fontWeight: '600', fontSize: 13, textTransform: 'capitalize' },
   errBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center', padding: 32 },

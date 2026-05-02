@@ -59,7 +59,12 @@
     "appleLoginFailed": "Apple ile giriş başarısız",
     "googleLoginFailed": "Google ile giriş başarısız",
     "apple_identity_token_failed": "Apple identity token alınamadı",
-    "google_id_token_failed": "Google ID token alınamadı"
+    "google_id_token_failed": "Google ID token alınamadı",
+    "legal_prefix": "Giriş yaparak ",
+    "legal_terms": "Kullanım Koşulları",
+    "legal_between": "'nı ve ",
+    "legal_kvkk": "KVKK Aydınlatma Metni",
+    "legal_suffix": "'ni kabul etmiş olursunuz."
   },
   "register": {
     "tagline": "My Loungers Dünyasına",

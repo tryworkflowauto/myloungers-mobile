@@ -59,7 +59,12 @@
     "appleLoginFailed": "Apple sign-in failed",
     "googleLoginFailed": "Google sign-in failed",
     "apple_identity_token_failed": "Could not retrieve Apple identity token",
-    "google_id_token_failed": "Could not retrieve Google ID token"
+    "google_id_token_failed": "Could not retrieve Google ID token",
+    "legal_prefix": "By signing in, you agree to our ",
+    "legal_terms": "Terms of Use",
+    "legal_between": " and ",
+    "legal_kvkk": "Privacy Notice",
+    "legal_suffix": "."
   },
   "register": {
     "tagline": "To the My Loungers world",
