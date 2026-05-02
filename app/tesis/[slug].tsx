@@ -76,6 +76,7 @@ type SezlongRow = {
 type MenuKategoriRow = {
   id: string
   ad: string
+  ad_en?: string | null
   icon: string | null
   sira: number | null
   tesis_id: string
@@ -84,7 +85,9 @@ type MenuKategoriRow = {
 type MenuUrunRow = {
   id: string
   ad: string
+  ad_en?: string | null
   aciklama: string | null
+  aciklama_en?: string | null
   fiyat: number | string
   gorsel_url: string | null
   kategori_id: string
@@ -473,7 +476,7 @@ export default function TesisDetailScreen() {
     void (async () => {
       const { data: cats } = await supabase
         .from('menu_kategorileri')
-        .select('id, ad, icon, sira, tesis_id')
+        .select('id, ad, ad_en, icon, sira, tesis_id')
         .eq('tesis_id', row.id)
         .order('sira', { ascending: true })
       if (cancelled) return
@@ -486,7 +489,7 @@ export default function TesisDetailScreen() {
       }
       const { data: urunler } = await supabase
         .from('menu_urunleri')
-        .select('id, ad, aciklama, fiyat, gorsel_url, kategori_id, aktif')
+        .select('id, ad, ad_en, aciklama, aciklama_en, fiyat, gorsel_url, kategori_id, aktif')
         .in('kategori_id', ids)
         .eq('aktif', true)
       if (cancelled) return
@@ -1755,7 +1758,9 @@ export default function TesisDetailScreen() {
                               }}
                               numberOfLines={1}
                             >
-                              {k.icon ? `${k.icon} ${k.ad}` : k.ad}
+                              {k.icon
+                                ? `${k.icon} ${getLocalizedField(k, 'ad', currentLang)}`
+                                : getLocalizedField(k, 'ad', currentLang)}
                             </Text>
                           </TouchableOpacity>
                         )
@@ -1774,7 +1779,7 @@ export default function TesisDetailScreen() {
                             }}
                           >
                             {group.kategori.icon ? `${group.kategori.icon} ` : ''}
-                            {group.kategori.ad}
+                            {getLocalizedField(group.kategori, 'ad', currentLang)}
                           </Text>
                           {group.urunler.map((urun) => (
                             <View
@@ -1807,13 +1812,15 @@ export default function TesisDetailScreen() {
                                 </View>
                               )}
                               <View style={{ flex: 1, minWidth: 0 }}>
-                                <Text style={{ fontSize: 14, fontWeight: '700', color: '#0A1628' }}>{urun.ad}</Text>
-                                {urun.aciklama ? (
+                                <Text style={{ fontSize: 14, fontWeight: '700', color: '#0A1628' }}>
+                                  {getLocalizedField(urun, 'ad', currentLang)}
+                                </Text>
+                                {getLocalizedField(urun, 'aciklama', currentLang).trim() ? (
                                   <Text
                                     style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}
                                     numberOfLines={4}
                                   >
-                                    {urun.aciklama}
+                                    {getLocalizedField(urun, 'aciklama', currentLang)}
                                   </Text>
                                 ) : null}
                                 <Text style={{ fontSize: 13, fontWeight: '700', color: '#0ABAB5', marginTop: 4 }}>
