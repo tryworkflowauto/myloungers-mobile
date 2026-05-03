@@ -308,6 +308,7 @@ export default function ProfilScreen() {
   const [confirmModal, setConfirmModal] = useState<{ visible: boolean; baslik: string; mesaj: string; rezervasyon: any } | null>(null)
   const [iptalLoading, setIptalLoading] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  const [isSSOUser, setIsSSOUser] = useState(false)
   const [visibleRezCount, setVisibleRezCount] = useState(10)
   const [gecmisTumSiparisler, setGecmisTumSiparisler] = useState<any[]>([])
   const [gecmisTumLoading, setGecmisTumLoading] = useState(false)
@@ -800,6 +801,32 @@ export default function ProfilScreen() {
     return () => clearInterval(iv)
   }, [])
 
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (cancelled || !user) {
+        if (!cancelled) setIsSSOUser(false)
+        return
+      }
+
+      // Supabase resmi provider alanı
+      const provider = user.app_metadata?.provider
+
+      // SADECE apple veya google ise SSO. Email, undefined, başka bir değer = NORMAL kullanıcı
+      const isSSO = provider === 'apple' || provider === 'google'
+
+      console.log('[SSO Detection v3]', {
+        provider,
+        email: user.email,
+        isSSO
+      })
+
+      if (!cancelled) setIsSSOUser(isSSO)
+    })()
+    return () => { cancelled = true }
+  }, [])
+
   // DEĞİŞİKLİK 2+3: fetchAktifCagrilar ve fetchBildirimler TEK sorguda birleştirildi.
   // Eski: 2 ayrı bildirimler sorgusu + 1 duplicate rezervasyonlar sorgusu = 3 round trip.
   // Yeni: 1 bildirimler sorgusu, hem aktifCagrilar hem bildirimler state'ini doldurur = 1 round trip.
@@ -1154,6 +1181,8 @@ export default function ProfilScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        nestedScrollEnabled={true}
+        bounces={true}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -2445,24 +2474,32 @@ export default function ProfilScreen() {
               </TouchableOpacity>
               {accordionGuvenlik ? (
                 <View style={styles.guvenlikSection}>
-                  <View style={styles.guvenlikKart}>
-                    <View style={styles.guvenlikKartRow}>
-                      <View style={styles.guvenlikKartSol}>
-                        <Ionicons name="lock-closed-outline" size={22} color="#0A1628" />
-                        <View style={styles.guvenlikKartMetin}>
-                          <Text style={styles.guvenlikKartTitle}>{t('profile.password')}</Text>
-                          <Text style={styles.guvenlikKartSub}>{t('profile.protect_account')}</Text>
+                  {!isSSOUser ? (
+                    <View style={styles.guvenlikKart}>
+                      <View style={styles.guvenlikKartRow}>
+                        <View style={styles.guvenlikKartSol}>
+                          <Ionicons name="lock-closed-outline" size={22} color="#0A1628" />
+                          <View style={styles.guvenlikKartMetin}>
+                            <Text style={styles.guvenlikKartTitle}>{t('profile.password')}</Text>
+                            <Text style={styles.guvenlikKartSub}>{t('profile.protect_account')}</Text>
+                          </View>
                         </View>
+                        <TouchableOpacity
+                          style={styles.guvenlikBtnOutline}
+                          activeOpacity={0.85}
+                          onPress={() => {
+                            console.log('[Change Password] tiklanildi')
+                            setModalAyarlar(false)
+                            setTimeout(() => {
+                              setModalParola(true)
+                            }, 300)
+                          }}
+                        >
+                          <Text style={styles.guvenlikBtnOutlineText}>{t('profile.change_password')}</Text>
+                        </TouchableOpacity>
                       </View>
-                      <TouchableOpacity
-                        style={styles.guvenlikBtnOutline}
-                        activeOpacity={0.85}
-                        onPress={() => setModalParola(true)}
-                      >
-                        <Text style={styles.guvenlikBtnOutlineText}>{t('profile.change_password')}</Text>
-                      </TouchableOpacity>
                     </View>
-                  </View>
+                  ) : null}
 
                   <View style={styles.guvenlikKart}>
                     <View style={styles.guvenlikKartRow}>
@@ -3118,7 +3155,7 @@ export default function ProfilScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#f1f5f9' },
-  safeRelative: { position: 'relative' },
+  safeRelative: {},
   successToast: {
     position: 'absolute',
     top: 16,
