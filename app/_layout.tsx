@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react'
 import { router } from 'expo-router'
 import { Stack } from 'expo-router'
+import {
+  authErrorToDiagnosticString,
+  isStaleRefreshTokenLikeAuthDiagnostic,
+  signOutStaleSessionQuietly,
+} from '../lib/authStaleSession'
 import { supabase } from '../lib/supabase'
 import SplashScreen from '../components/SplashScreen'
 import initI18n from '../lib/i18n'
@@ -28,7 +33,7 @@ export default function RootLayout() {
         console.log('[Auth Event]', event)
 
         if (event === 'TOKEN_REFRESHED' && !session) {
-          await supabase.auth.signOut()
+          await signOutStaleSessionQuietly()
           router.replace('/giris')
           return
         }
@@ -46,24 +51,22 @@ export default function RootLayout() {
         const { data: { session }, error } = await supabase.auth.getSession()
 
         if (error) {
-          console.log('[Session Error]', error.message)
-          if (
-            error.message?.toLowerCase().includes('refresh') ||
-            error.message?.toLowerCase().includes('token')
-          ) {
-            await supabase.auth.signOut()
+          const diag = authErrorToDiagnosticString(error)
+          if (isStaleRefreshTokenLikeAuthDiagnostic(diag)) {
+            await signOutStaleSessionQuietly()
             router.replace('/giris')
+            return
           }
+          console.log('[Session Error]', error.message)
         }
-      } catch (err: any) {
-        console.log('[Initial Session Check Error]', err?.message)
-        if (
-          err?.message?.toLowerCase().includes('refresh') ||
-          err?.message?.toLowerCase().includes('token')
-        ) {
-          try { await supabase.auth.signOut() } catch {}
+      } catch (err: unknown) {
+        const diag = authErrorToDiagnosticString(err)
+        if (isStaleRefreshTokenLikeAuthDiagnostic(diag)) {
+          await signOutStaleSessionQuietly()
           router.replace('/giris')
+          return
         }
+        console.log('[Initial Session Check Error]', diag)
       }
     }
 
