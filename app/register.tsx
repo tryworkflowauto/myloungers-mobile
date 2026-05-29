@@ -44,10 +44,10 @@ export default function RegisterScreen() {
     }
     const user = data.user
     if (user) {
-      const { error: profileError } = await supabase.from('kullanicilar').insert({
-        id: user.id,
-        ad_soyad: name,
-      })
+      const [first, ...rest] = name.split(' ')
+      const ad = first
+      const soyad = rest.join(' ') || null
+      const { error: profileError } = await supabase.from('kullanicilar').update({ ad, soyad }).eq('id', user.id)
       if (profileError) {
         Alert.alert(t('common.errorTitle'), profileError.message)
         return
