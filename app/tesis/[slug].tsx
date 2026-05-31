@@ -1,3 +1,4 @@
+import DateTimePicker from '@react-native-community/datetimepicker'
 import { Ionicons } from '@expo/vector-icons'
 import { Image } from 'expo-image'
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router'
@@ -8,6 +9,7 @@ import {
   Dimensions,
   Linking,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -69,6 +71,7 @@ type GrupRow = {
   aciklama: string | null
   aciklama_en?: string | null
   deniz_sirasi: number | null
+  gorsel?: string | null
 }
 
 type SezlongRow = {
@@ -190,6 +193,10 @@ type TesisDetailRow = {
   iletisim_numarasi: string | null
   enlem: number | null
   boylam: number | null
+  yer_secimsiz?: boolean | null
+  yer_secimsiz_aciklama?: string | null
+  hizmet_secimli?: boolean | null
+  saat_zorunlu?: boolean | null
 }
 
 type ImkanListItem = { name: string; name_en?: string; emoji: string }
@@ -390,9 +397,17 @@ export default function TesisDetailScreen() {
     dolu: Set<string>; rezerve: Set<string>; bakim: Set<string>; kilitli: Set<string>
   }>({ dolu: new Set(), rezerve: new Set(), bakim: new Set(), kilitli: new Set() })
   const [secilenSezlongIds, setSecilenSezlongIds] = useState<Set<string>>(new Set())
+  const [secilenHizmetGrup, setSecilenHizmetGrup] = useState<GrupRow | null>(null)
   const [paxCount, setPaxCount] = useState(1)
   const [paxUyariVisible, setPaxUyariVisible] = useState(false)
   const [secilenTarih, setSecilenTarih] = useState<Date | null>(null)
+  const [secilenSaat, setSecilenSaat] = useState<string>('')
+  const [showSaatPicker, setShowSaatPicker] = useState(false)
+  const [saatPickerDate, setSaatPickerDate] = useState(() => {
+    const d = new Date()
+    d.setHours(12, 0, 0, 0)
+    return d
+  })
   const [tarihUyariGoster, setTarihUyariGoster] = useState(false)
   const [showPlanDatePicker, setShowPlanDatePicker] = useState(false)
   const [planCalendarViewMonth, setPlanCalendarViewMonth] = useState(() => new Date())
@@ -442,7 +457,7 @@ export default function TesisDetailScreen() {
     void supabase
       .from('tesisler')
       .select(
-        'id, ad, slug, sehir, ilce, fotograflar, puan, kisa_aciklama, kisa_aciklama_en, aciklama, detayli_aciklama, detayli_aciklama_en, imkanlar, calisma_saatleri, adres, video_url, ulasim, kurallar, kampanya_notlari, telefon, iletisim_numarasi, enlem, boylam',
+        'id, ad, slug, sehir, ilce, fotograflar, puan, kisa_aciklama, kisa_aciklama_en, aciklama, detayli_aciklama, detayli_aciklama_en, imkanlar, calisma_saatleri, adres, video_url, ulasim, kurallar, kampanya_notlari, telefon, iletisim_numarasi, enlem, boylam, yer_secimsiz, yer_secimsiz_aciklama, hizmet_secimli, saat_zorunlu',
       )
       .eq('slug', slug)
       .maybeSingle()
@@ -498,7 +513,7 @@ export default function TesisDetailScreen() {
     console.log('tesis id:', row?.id)
     void supabase
       .from('sezlong_gruplari')
-      .select('id, ad, ad_en, renk, fiyat, fiyat_hafici, fiyat_hafta_sonu, sira, aciklama, aciklama_en, deniz_sirasi')
+      .select('id, ad, ad_en, renk, fiyat, fiyat_hafici, fiyat_hafta_sonu, sira, aciklama, aciklama_en, deniz_sirasi, gorsel')
       .eq('tesis_id', row.id)
       .order('sira', { ascending: true })
       .then(({ data }) => {
@@ -734,6 +749,22 @@ export default function TesisDetailScreen() {
         t(`days_short_map.${name}`, { defaultValue: name }),
       )
     : []
+  const yerSecimsizMi = row?.yer_secimsiz === true
+  const hizmetSecimliMi = row?.hizmet_secimli === true
+  const saatZorunluMu = row?.saat_zorunlu === true
+  const saatPickerValue = useMemo(() => {
+    if (secilenSaat) {
+      const parts = secilenSaat.split(':')
+      const h = parseInt(parts[0], 10)
+      const m = parseInt(parts[1], 10)
+      if (!Number.isNaN(h) && !Number.isNaN(m)) {
+        const d = new Date()
+        d.setHours(h, m, 0, 0)
+        return d
+      }
+    }
+    return saatPickerDate
+  }, [secilenSaat, saatPickerDate])
   const tesisVideoUrlTrimmed = useMemo(() => row?.video_url?.trim() || null, [row?.video_url])
   const ulasimFields = useMemo(() => {
     if (row?.ulasim == null) return null
@@ -1193,7 +1224,7 @@ export default function TesisDetailScreen() {
             </View>
           ) : null}
 
-          {gruplar.length > 0 && (
+          {(gruplar.length > 0 || yerSecimsizMi || hizmetSecimliMi) && (
             <View
               style={[styles.card, { padding: 0, overflow: 'hidden' }]}
               onLayout={(e) => { planSectionLayoutY.current = e.nativeEvent.layout.y }}
@@ -1249,6 +1280,60 @@ export default function TesisDetailScreen() {
                 <Ionicons name="chevron-down" size={16} color="#fff" />
               </TouchableOpacity>
 
+              {saatZorunluMu && (
+                <>
+                  <Text style={{ fontSize: 12, color: '#64748b', marginBottom: 6, fontWeight: '600' }}>
+                    {t('facility.reservation_time_label', { defaultValue: 'Rezervasyon Saati' })}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      if (Platform.OS === 'ios') setShowSaatPicker((v) => !v)
+                      else setShowSaatPicker(true)
+                    }}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 8,
+                      backgroundColor: '#1e3a5f',
+                      borderRadius: 10,
+                      padding: 10,
+                      marginBottom: showSaatPicker && Platform.OS === 'ios' ? 8 : 16,
+                    }}
+                  >
+                    <Ionicons name="time-outline" size={16} color="#fff" />
+                    <Text style={{ fontSize: 14, color: '#fff', fontWeight: '700' }}>
+                      {secilenSaat ||
+                        t('facility.select_time', { defaultValue: 'Saat seçin' })}
+                    </Text>
+                    <Ionicons name="chevron-down" size={16} color="#fff" />
+                  </TouchableOpacity>
+                  {showSaatPicker && (
+                    <DateTimePicker
+                      value={saatPickerValue}
+                      mode="time"
+                      is24Hour
+                      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                      onChange={(event, selectedDate) => {
+                        if (Platform.OS === 'android') setShowSaatPicker(false)
+                        if (event.type === 'dismissed') {
+                          setShowSaatPicker(false)
+                          return
+                        }
+                        if (selectedDate) {
+                          const h = String(selectedDate.getHours()).padStart(2, '0')
+                          const m = String(selectedDate.getMinutes()).padStart(2, '0')
+                          setSecilenSaat(`${h}:${m}`)
+                          setSaatPickerDate(selectedDate)
+                        }
+                      }}
+                      style={Platform.OS === 'ios' ? { marginBottom: 16 } : undefined}
+                    />
+                  )}
+                </>
+              )}
+
+              {!yerSecimsizMi && !hizmetSecimliMi && (
+                <>
               <View
                 style={{
                   flexDirection: 'row',
@@ -1317,6 +1402,8 @@ export default function TesisDetailScreen() {
                   </Text>
                 </View>
               </View>
+                </>
+              )}
 
               {/* Kişi sayısı seçici */}
               <View style={styles.paxRow}>
@@ -1351,7 +1438,70 @@ export default function TesisDetailScreen() {
                 </View>
               </View>
 
-              {gruplar.map((grup) => {
+              {yerSecimsizMi && (
+                <View style={{ backgroundColor: '#f0fdfa', borderRadius: 10, padding: 14, marginTop: 8 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
+                    <Ionicons name="information-circle-outline" size={20} color="#0ABAB5" style={{ marginTop: 1 }} />
+                    <Text style={[styles.bodyText, { flex: 1 }]}>
+                      {row?.yer_secimsiz_aciklama?.trim() || 'Bu tesiste yer seçimi yapılmaz; kişi sayısı kadar yeriniz otomatik ayrılır.'}
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {hizmetSecimliMi &&
+                gruplar.map((grup) => {
+                  const secili = secilenHizmetGrup?.id === grup.id
+                  const fiyat = grup.fiyat ?? grup.fiyat_hafici
+                  const gorselUri = grup.gorsel?.trim() || null
+                  return (
+                    <TouchableOpacity
+                      key={grup.id}
+                      activeOpacity={0.85}
+                      onPress={() => setSecilenHizmetGrup(grup)}
+                      style={[
+                        styles.card,
+                        {
+                          marginBottom: 12,
+                          marginTop: 0,
+                          padding: 12,
+                          borderWidth: secili ? 2 : 1,
+                          borderColor: secili ? '#f59e0b' : '#e2e8f0',
+                        },
+                      ]}
+                    >
+                      {gorselUri ? (
+                        <Image
+                          source={{ uri: gorselUri }}
+                          style={{ width: '100%', height: 140, borderRadius: 10, marginBottom: 10 }}
+                          contentFit="cover"
+                        />
+                      ) : (
+                        <View
+                          style={{
+                            width: '100%',
+                            height: 140,
+                            borderRadius: 10,
+                            marginBottom: 10,
+                            backgroundColor: '#e2e8f0',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <Ionicons name="image-outline" size={40} color="#94a3b8" />
+                        </View>
+                      )}
+                      <Text style={styles.sectionTitle}>{getLocalizedField(grup, 'ad', currentLang)}</Text>
+                      {fiyat != null ? (
+                        <Text style={[styles.bodyText, { marginTop: 4, fontWeight: '700', color: '#0A1628' }]}>
+                          ₺{formatMenuFiyat(fiyat)}
+                        </Text>
+                      ) : null}
+                    </TouchableOpacity>
+                  )
+                })}
+
+              {!yerSecimsizMi && !hizmetSecimliMi && gruplar.map((grup) => {
                 const grupSezlonglar = sezlonglar.filter((s) => s.grup_id === grup.id).sort((a, b) => a.numara - b.numara)
                 if (grupSezlonglar.length === 0) return null
                 const fiyat = grup.fiyat ?? grup.fiyat_hafici
@@ -1480,7 +1630,7 @@ export default function TesisDetailScreen() {
                 )
               })}
 
-              {secilenSezlongIds.size > 0 && (
+              {!yerSecimsizMi && !hizmetSecimliMi && secilenSezlongIds.size > 0 && (
                 <View style={{ backgroundColor: '#f0fdfa', borderRadius: 10, padding: 12, marginTop: 8 }}>
                   <Text style={{ fontSize: 14, color: '#0ABAB5', fontWeight: '700', textAlign: 'center' }}>
                     {t('facility.sunbeds_selected', {
@@ -2483,8 +2633,36 @@ export default function TesisDetailScreen() {
                 return
               }
 
-              if (secilenSezlongIds.size === 0) {
+              if (saatZorunluMu && !secilenSaat.trim()) {
+                setValidUyariMesaj(
+                  t('facility.select_reservation_time', {
+                    defaultValue: 'Lütfen rezervasyon saati seçin',
+                  }),
+                )
+                setValidUyariVisible(true)
+                setAcikPlan(true)
+                scrollViewRef.current?.scrollTo({
+                  y: padHLayoutY.current + planSectionLayoutY.current - 12,
+                  animated: true,
+                })
+                return
+              }
+
+              if (!yerSecimsizMi && !hizmetSecimliMi && secilenSezlongIds.size === 0) {
                 setValidUyariMesaj(t('facility.select_at_least_one'))
+                setValidUyariVisible(true)
+                setAcikPlan(true)
+                scrollViewRef.current?.scrollTo({
+                  y: padHLayoutY.current + planSectionLayoutY.current - 12,
+                  animated: true,
+                })
+                return
+              }
+
+              if (hizmetSecimliMi && secilenHizmetGrup == null) {
+                setValidUyariMesaj(
+                  t('facility.select_service', { defaultValue: 'Lütfen bir hizmet seçin' }),
+                )
                 setValidUyariVisible(true)
                 setAcikPlan(true)
                 scrollViewRef.current?.scrollTo({
@@ -2499,7 +2677,68 @@ export default function TesisDetailScreen() {
               // aksi hâlde router.push aynı senkron blokta çalışır ve re-render olmaz.
               await new Promise<void>((resolve) => setTimeout(resolve, 0))
               try {
-                const allIds = [...secilenSezlongIds]
+                let allIds: string[]
+                if (yerSecimsizMi) {
+                  const bosSezlonglar = sezlonglar.filter((s) => {
+                    const isDbDolu = rezervedByType.dolu.has(s.id)
+                    const isDbRezerve = rezervedByType.rezerve.has(s.id)
+                    const isDbBakim = rezervedByType.bakim.has(s.id)
+                    const isDbKilitli = rezervedByType.kilitli.has(s.id)
+                    const isDolu = isDbDolu || s.durum === 'dolu'
+                    const isRezerve = isDbRezerve || s.durum === 'rezerve'
+                    const isBakim = isDbBakim || s.durum === 'bakim'
+                    const isKilitli = isDbKilitli || s.durum === 'kilitli'
+                    return !(isDolu || isRezerve || isBakim || isKilitli)
+                  })
+                  if (bosSezlonglar.length < paxCount) {
+                    setRezButtonLoading(false)
+                    setValidUyariMesaj(
+                      t('facility.not_enough_seats_on_date', {
+                        defaultValue: 'Seçtiğiniz tarihte yeterli yer yok',
+                      }),
+                    )
+                    setValidUyariVisible(true)
+                    setAcikPlan(true)
+                    scrollViewRef.current?.scrollTo({
+                      y: padHLayoutY.current + planSectionLayoutY.current - 12,
+                      animated: true,
+                    })
+                    return
+                  }
+                  allIds = bosSezlonglar.slice(0, paxCount).map((s) => s.id)
+                } else if (hizmetSecimliMi && secilenHizmetGrup) {
+                  const bosSezlonglar = sezlonglar
+                    .filter((s) => s.grup_id === secilenHizmetGrup.id)
+                    .filter((s) => {
+                      const isDbDolu = rezervedByType.dolu.has(s.id)
+                      const isDbRezerve = rezervedByType.rezerve.has(s.id)
+                      const isDbBakim = rezervedByType.bakim.has(s.id)
+                      const isDbKilitli = rezervedByType.kilitli.has(s.id)
+                      const isDolu = isDbDolu || s.durum === 'dolu'
+                      const isRezerve = isDbRezerve || s.durum === 'rezerve'
+                      const isBakim = isDbBakim || s.durum === 'bakim'
+                      const isKilitli = isDbKilitli || s.durum === 'kilitli'
+                      return !(isDolu || isRezerve || isBakim || isKilitli)
+                    })
+                  if (bosSezlonglar.length < paxCount) {
+                    setRezButtonLoading(false)
+                    setValidUyariMesaj(
+                      t('facility.not_enough_seats_on_date', {
+                        defaultValue: 'Seçtiğiniz tarihte yeterli yer yok',
+                      }),
+                    )
+                    setValidUyariVisible(true)
+                    setAcikPlan(true)
+                    scrollViewRef.current?.scrollTo({
+                      y: padHLayoutY.current + planSectionLayoutY.current - 12,
+                      animated: true,
+                    })
+                    return
+                  }
+                  allIds = bosSezlonglar.slice(0, paxCount).map((s) => s.id)
+                } else {
+                  allIds = [...secilenSezlongIds]
+                }
                 const firstId = allIds[0]
                 const secilenSezlong = firstId
                   ? sezlonglar.find((s) => s.id === firstId)
@@ -2555,6 +2794,7 @@ export default function TesisDetailScreen() {
                       toplam_tutar: fiyatBu,
                       durum: 'bekliyor',
                       rezerveli_kadar: rezerveliKadar,
+                      ...(secilenSaat ? { saat: secilenSaat } : {}),
                     })
                     .select('id')
                     .single()
@@ -2581,6 +2821,8 @@ export default function TesisDetailScreen() {
                     kisi_sayisi: String(paxCount),
                     tesis_fotograf: parsePhotoSrcs(row.fotograflar)[0] ?? '',
                     bekleyen_rez_ids: bekleyenIds.join(','),
+                    hizmet_secimli: hizmetSecimliMi ? '1' : '',
+                    saat: secilenSaat,
                   },
                 })
               } catch {

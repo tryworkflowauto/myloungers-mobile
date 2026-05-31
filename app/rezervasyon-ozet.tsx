@@ -111,13 +111,18 @@ export default function RezervasyonOzet() {
     kisi_sayisi?: string
     tesis_fotograf?: string
     bekleyen_rez_ids?: string
+    hizmet_secimli?: string
+    saat?: string
   }>()
 
   const tesis_id = params.tesis_id
   const tesis_adi = params.tesis_adi ?? ''
   const grup_adi = params.grup_adi ?? ''
   const sezlong_adi = params.sezlong_adi ?? ''
+  const hizmetSecimli = params.hizmet_secimli === '1'
+  const ozetYerVeyaHizmet = hizmetSecimli ? grup_adi : sezlong_adi
   const tarih = params.tarih ?? ''
+  const saat = params.saat?.trim() ?? ''
   const tesis_fotograf = params.tesis_fotograf
   const fiyatRaw = params.fiyat
 
@@ -420,6 +425,7 @@ export default function RezervasyonOzet() {
             toplam_tutar: thisToplam,
             kisi_sayisi: 1,
             rezervasyon_kodu: thisRezKodu,
+            ...(saat ? { saat } : {}),
           }
 
           const { data: rezData, error: rezError } = await supabase
@@ -581,7 +587,14 @@ export default function RezervasyonOzet() {
                   ) : null}
                   <View style={styles.sumRows}>
                     <SumRow icon="📅" label={t('reservation.date_label')} value={tarih || '—'} />
-                    <SumRow icon="🛏" label={t('reservation.sunbed_label')} value={sezlong_adi || '—'} />
+                    {saat ? (
+                      <SumRow
+                        icon="🕐"
+                        label={t('reservation.time_label', { defaultValue: 'Saat' })}
+                        value={saat}
+                      />
+                    ) : null}
+                    <SumRow icon="🛏" label={t('reservation.sunbed_label')} value={ozetYerVeyaHizmet || '—'} />
                     <SumRow icon="👥" label={t('reservation.guest_label')} value={t('reservation.guest_count', { count: kisiNum })} />
                     <SumRow
                       icon="📆"
@@ -605,7 +618,7 @@ export default function RezervasyonOzet() {
               <View style={styles.card}>
                 <Text style={styles.cardTitle}>{t('reservation.reservation_detail')}</Text>
                 <Row label={t('reservation.date_label')} value={tarih || '—'} />
-                <Row label={t('reservation.sunbed_label')} value={sezlong_adi || '—'} />
+                <Row label={t('reservation.sunbed_label')} value={ozetYerVeyaHizmet || '—'} />
                 <Row
                   label={t('reservation.duration_label')}
                   value={
@@ -639,9 +652,10 @@ export default function RezervasyonOzet() {
               {/* ── Kişisel bilgiler (her şezlong için ayrı form) ── */}
               {kisiler.map((kisi, index) => {
                 const sezlongAdlari = sezlong_adi.split(',')
-                const buSezlong =
-                  sezlongAdlari[index]?.trim() ||
-                  t('reservation.sunbed_form_title', { n: index + 1 })
+                const buSezlong = hizmetSecimli
+                  ? grup_adi.trim() || t('reservation.sunbed_form_title', { n: index + 1 })
+                  : sezlongAdlari[index]?.trim() ||
+                    t('reservation.sunbed_form_title', { n: index + 1 })
                 const isLast = index === kisiler.length - 1
                 return (
                   <View key={index} style={[styles.card, !isLast && { marginBottom: 0, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, borderBottomWidth: 0 }]}>

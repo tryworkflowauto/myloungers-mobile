@@ -584,7 +584,7 @@ export default function ProfilScreen() {
           supabase
             .from('rezervasyonlar')
             .select(
-              'id, baslangic_tarih, bitis_tarih, sezlong_id, toplam_tutar, bakiye_yuklenen, bakiye_harcanan, bakiye_kalan, durum, tesis_id, rezervasyon_kodu, giris_yapildi, tesisler(ad, fotograflar, sehir, kategori, slug), sezlonglar(numara, grup_id, sezlong_gruplari(ad))',
+              'id, baslangic_tarih, bitis_tarih, sezlong_id, toplam_tutar, bakiye_yuklenen, bakiye_harcanan, bakiye_kalan, durum, tesis_id, rezervasyon_kodu, giris_yapildi, saat, tesisler(ad, fotograflar, sehir, kategori, slug, odeme_modu), sezlonglar(numara, grup_id, sezlong_gruplari(ad))',
             )
             .eq('kullanici_id', userData.id)
             .in('durum', ['onaylandi', 'aktif', 'tamamlandi', 'iptal', 'iptal_edildi'])
@@ -1445,6 +1445,11 @@ export default function ProfilScreen() {
                       <Text style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>
                         {t('profile.date_label')}: {formatRezTarih(r.baslangic_tarih ?? '')}
                       </Text>
+                      {r.saat?.trim() ? (
+                        <Text style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
+                          {t('profile.time_label', { defaultValue: 'Saat' })}: {r.saat.trim()}
+                        </Text>
+                      ) : null}
                       <Text style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
                         {t('profile.sunbed_label')}: {sezlongMap[r.sezlong_id] ?? ''}
                       </Text>
@@ -1533,6 +1538,7 @@ export default function ProfilScreen() {
                   {(() => {
                     const rezId = String(r.id)
                     const girisYapildi = r.giris_yapildi === true
+                    const hizmetBedeliMi = r.tesisler?.odeme_modu === 'hizmet_bedeli'
                     const cagriKilitli = (garsonCagriCooldown[rezId] ?? 0) > Date.now()
                     const aktifVeOnayli = (r.durum === 'aktif' || r.durum === 'onaylandi')
 
@@ -1577,7 +1583,7 @@ export default function ProfilScreen() {
                             activeOpacity={0.85}
                             style={{
                               flex: 1,
-                              backgroundColor: !girisYapildi ? '#E5E7EB' : '#F5821F',
+                              backgroundColor: !girisYapildi || hizmetBedeliMi ? '#E5E7EB' : '#F5821F',
                               paddingVertical: 12,
                               borderRadius: 10,
                               flexDirection: 'row',
@@ -1586,6 +1592,15 @@ export default function ProfilScreen() {
                               gap: 6,
                             }}
                             onPress={() => {
+                              if (hizmetBedeliMi) {
+                                setSuccessMesaj(
+                                  t('profile.service_prepaid_no_order', {
+                                    defaultValue: 'Bu tesiste sipariş alınmaz; hizmet bedeli peşin ödenir.',
+                                  }),
+                                )
+                                setTimeout(() => setSuccessMesaj(''), 3000)
+                                return
+                              }
                               if (!girisYapildi) {
                                 Alert.alert('Şezlong girişi gerekli', 'Önce QR veya Kod ile şezlong girişinizi yapın.')
                                 return
@@ -1593,8 +1608,18 @@ export default function ProfilScreen() {
                               router.push({ pathname: '/siparis/[rezervasyon_id]', params: { rezervasyon_id: String(r.id), tesis_id: String(r.tesis_id || '') } })
                             }}
                           >
-                            <Ionicons name={!girisYapildi ? 'lock-closed' : 'restaurant'} size={15} color={!girisYapildi ? '#9CA3AF' : '#fff'} />
-                            <Text style={{ color: !girisYapildi ? '#6B7280' : '#fff', fontWeight: '700', fontSize: 13 }}>
+                            <Ionicons
+                              name={!girisYapildi || hizmetBedeliMi ? 'lock-closed' : 'restaurant'}
+                              size={15}
+                              color={!girisYapildi || hizmetBedeliMi ? '#9CA3AF' : '#fff'}
+                            />
+                            <Text
+                              style={{
+                                color: !girisYapildi || hizmetBedeliMi ? '#6B7280' : '#fff',
+                                fontWeight: '700',
+                                fontSize: 13,
+                              }}
+                            >
                               {t('profile.place_order')}
                             </Text>
                           </TouchableOpacity>
