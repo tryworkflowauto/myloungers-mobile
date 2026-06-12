@@ -36,6 +36,14 @@ export type TesisRow = {
   boylam?: number | null
 }
 
+type TesisTipRow = {
+  slug: string
+  ad: string
+  db_value: string | null
+  yer_etiketi: string | null
+  sira: number | null
+}
+
 function sameCalendarDay(a: Date, b: Date) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
 }
@@ -149,6 +157,28 @@ function getKategori(r: TesisRow): string[] {
   return sonuc
 }
 
+function matchesTipBySlug(row: TesisRow, slug: string, tipler: TesisTipRow[]): boolean {
+  const tip = tipler.find((t) => t.slug === slug)
+  const dbVal = tip?.db_value?.trim()
+  if (!dbVal) return false
+  const needle = dbVal.toUpperCase()
+  return getKategori(row).some((k) => k.toUpperCase().includes(needle))
+}
+
+function getYerEtiketi(row: TesisRow, tipler: TesisTipRow[]): string {
+  const kategoriler = getKategori(row)
+  for (const tip of tipler) {
+    const dbVal = tip.db_value?.trim()
+    if (!dbVal) continue
+    const needle = dbVal.toUpperCase()
+    if (kategoriler.some((k) => k.toUpperCase().includes(needle))) {
+      const etiket = tip.yer_etiketi?.trim()
+      return etiket || 'Şezlong'
+    }
+  }
+  return 'Şezlong'
+}
+
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371
   const toRad = (d: number) => (d * Math.PI) / 180
@@ -182,6 +212,11 @@ export default function SearchScreen() {
   const isTr = i18n.language.startsWith('tr')
   const params = useLocalSearchParams<{ region?: string; facilityTypeKey?: string; date?: string; facilityName?: string }>()
 
+  const paramFacilityTypeKey = useMemo(() => {
+    const k = paramString(params.facilityTypeKey)
+    return k === '' ? null : k
+  }, [params.facilityTypeKey])
+
   const [region, setRegion] = useState(() => paramString(params.region))
   const [facilityName, setFacilityName] = useState(() => paramString(params.facilityName))
   const [facilityTypeKey, setFacilityTypeKey] = useState<string | null>(() => {
@@ -208,10 +243,14 @@ export default function SearchScreen() {
 
   const [showTypeModal, setShowTypeModal] = useState(false)
   const [searchResults, setSearchResults] = useState<TesisRow[]>([])
+  const [tesisTipleri, setTesisTipleri] = useState<TesisTipRow[]>([])
   const [loading, setLoading] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
 
-  const [filterTab, setFilterTab] = useState<'all' | 'hotel' | 'beach' | 'aqua'>('all')
+  const [filterTab, setFilterTab] = useState<string>(() => {
+    const k = paramString(params.facilityTypeKey)
+    return k === '' ? 'all' : k
+  })
   const [kisiSayisi, setKisiSayisi] = useState<number | null>(null)
   const [showKisiModal, setShowKisiModal] = useState(false)
   const [gpsLoading, setGpsLoading] = useState(false)
@@ -233,12 +272,8 @@ export default function SearchScreen() {
   )
 
   const typeOptions = useMemo(
-    () => [
-      { key: 'hotel', label: t('home.facilityTypeHotel') },
-      { key: 'beach', label: t('home.facilityTypeBeachClub') },
-      { key: 'aqua', label: t('home.facilityTypeAquaPark') },
-    ],
-    [t],
+    () => tesisTipleri.map((t) => ({ key: t.slug, label: t.ad })),
+    [tesisTipleri],
   )
 
   const selectedTypeLabel = facilityTypeKey
@@ -292,13 +327,6 @@ export default function SearchScreen() {
       const qn = facilityName.trim().toLowerCase()
       out = out.filter((row) => row.ad.toLowerCase().includes(qn))
     }
-    if (facilityTypeKey === 'hotel') {
-      out = out.filter((row) => getKategori(row).some((k) => k.toUpperCase().includes('HOTEL')))
-    } else if (facilityTypeKey === 'beach') {
-      out = out.filter((row) => getKategori(row).some((k) => k.toUpperCase().includes('BEACH')))
-    } else if (facilityTypeKey === 'aqua') {
-      out = out.filter((row) => getKategori(row).some((k) => k.toUpperCase().includes('AQUA')))
-    }
     if (gpsKonum && hasLatLonCols) {
       out = out.filter((row) => {
         const lat = row.enlem
@@ -311,7 +339,7 @@ export default function SearchScreen() {
       })
     }
     setSearchResults(out)
-  }, [region, facilityName, facilityTypeKey, mesafe, gpsKonum])
+  }, [region, facilityName, mesafe, gpsKonum])
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true)
@@ -344,11 +372,40 @@ export default function SearchScreen() {
 
   useEffect(() => {
     void runSearch()
-    const k = paramString(params.facilityTypeKey)
-    if (k === 'hotel') setFilterTab('hotel')
-    else if (k === 'beach') setFilterTab('beach')
-    else if (k === 'aqua') setFilterTab('aqua')
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    if (paramFacilityTypeKey) {
+      setFilterTab(paramFacilityTypeKey)
+      setFacilityTypeKey(paramFacilityTypeKey)
+    } else {
+      setFilterTab('all')
+      setFacilityTypeKey(null)
+    }
+  }, [paramFacilityTypeKey])
+
+  useEffect(() => {
+    if (paramFacilityTypeKey != null || tesisTipleri.length > 0) {
+      void runSearch()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paramFacilityTypeKey, tesisTipleri])
+
+  useEffect(() => {
+    let cancelled = false
+    void supabase
+      .from('tesis_tipleri')
+      .select('slug, ad, db_value, yer_etiketi, sira')
+      .eq('aktif', true)
+      .order('sira', { ascending: true })
+      .then(({ data, error }) => {
+        if (cancelled || error) return
+        setTesisTipleri((data as TesisTipRow[]) ?? [])
+      })
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   useEffect(() => {
@@ -423,13 +480,10 @@ export default function SearchScreen() {
 
   const filteredResults = useMemo(() => {
     let list: TesisRow[]
-    if (filterTab === 'all') list = [...searchResults]
-    else if (filterTab === 'beach') {
-      list = searchResults.filter((r) => getKategori(r).some((k) => k.toUpperCase().includes('BEACH')))
-    } else if (filterTab === 'hotel') {
-      list = searchResults.filter((r) => getKategori(r).some((k) => k.toUpperCase().includes('HOTEL')))
+    if (filterTab === 'all') {
+      list = [...searchResults]
     } else {
-      list = searchResults.filter((r) => getKategori(r).some((k) => k.toUpperCase().includes('AQUA')))
+      list = searchResults.filter((r) => matchesTipBySlug(r, filterTab, tesisTipleri))
     }
 
     if (minPuan != null) {
@@ -470,7 +524,7 @@ export default function SearchScreen() {
     })
 
     return list
-  }, [searchResults, filterTab, siralama, minPuan, secilenImkanlar])
+  }, [searchResults, filterTab, siralama, minPuan, secilenImkanlar, tesisTipleri])
 
   const onUseGps = async () => {
     setGpsLoading(true)
@@ -494,22 +548,30 @@ export default function SearchScreen() {
     }
   }
 
-  const tabItems: { key: 'all' | 'hotel' | 'beach' | 'aqua'; label: string }[] = [
-    { key: 'all', label: t('search.tabAll') },
-    { key: 'beach', label: t('home.facilityTypeBeachClub') },
-    { key: 'hotel', label: t('home.facilityTypeHotel') },
-    { key: 'aqua', label: t('home.facilityTypeAquaPark') },
-  ]
+  const tabItems = useMemo(
+    () => [
+      { key: 'all', label: t('search.tabAll') },
+      ...tesisTipleri.map((tip) => ({ key: tip.slug, label: tip.ad })),
+    ],
+    [tesisTipleri, t],
+  )
 
   const tabCounts = useMemo(() => {
     const sr = searchResults
-    return {
-      all: sr.length,
-      beach: sr.filter((r) => getKategori(r).some((k) => k.toUpperCase().includes('BEACH'))).length,
-      hotel: sr.filter((r) => getKategori(r).some((k) => k.toUpperCase().includes('HOTEL'))).length,
-      aqua: sr.filter((r) => getKategori(r).some((k) => k.toUpperCase().includes('AQUA'))).length,
+    const counts: Record<string, number> = { all: sr.length }
+    for (const tip of tesisTipleri) {
+      const dbVal = tip.db_value?.trim()
+      if (!dbVal) {
+        counts[tip.slug] = 0
+        continue
+      }
+      const needle = dbVal.toUpperCase()
+      counts[tip.slug] = sr.filter((r) =>
+        getKategori(r).some((k) => k.toUpperCase().includes(needle)),
+      ).length
     }
-  }, [searchResults])
+    return counts
+  }, [searchResults, tesisTipleri])
 
   const facilityNameMatches = useMemo(() => {
     const q = facilityName.trim().toLowerCase()
@@ -622,6 +684,7 @@ export default function SearchScreen() {
                 style={styles.typeOptionRow}
                 onPress={() => {
                   setFacilityTypeKey(o.key)
+                  setFilterTab(o.key)
                   setShowTypeModal(false)
                 }}
                 activeOpacity={0.85}
@@ -920,7 +983,15 @@ export default function SearchScreen() {
             const n = tabCounts[tab.key]
             const tabLabel = n > 0 ? `${tab.label} (${n})` : tab.label
             return (
-              <TouchableOpacity key={tab.key} style={styles.tab} onPress={() => setFilterTab(tab.key)} activeOpacity={0.85}>
+              <TouchableOpacity
+                key={tab.key}
+                style={styles.tab}
+                onPress={() => {
+                  setFilterTab(tab.key)
+                  setFacilityTypeKey(tab.key === 'all' ? null : tab.key)
+                }}
+                activeOpacity={0.85}
+              >
                 <Text style={[styles.tabText, active && styles.tabTextActive]}>{tabLabel}</Text>
                 {active ? <View style={styles.tabUnderline} /> : null}
               </TouchableOpacity>
@@ -984,7 +1055,7 @@ export default function SearchScreen() {
                       </View>
                     ) : null}
                     <TouchableOpacity style={styles.loungerBtn} activeOpacity={0.9} onPress={() => router.push(`/tesis/${encodeURIComponent(item.slug)}`)}>
-                      <Text style={styles.loungerBtnText}>{t('search.selectLounger')}</Text>
+                      <Text style={styles.loungerBtnText}>{t('search.selectLounger', { unit: getYerEtiketi(item, tesisTipleri) })}</Text>
                     </TouchableOpacity>
                   </View>
                 </Pressable>

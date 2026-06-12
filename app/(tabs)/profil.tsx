@@ -78,12 +78,39 @@ type RezRow = {
   grupAd: string
   sehir: string
   kategori: string
+  tesisKategoriRaw: string | string[] | null
   tesisSlug: string
   sezlongLabel: string
   iptalSaatOncesi: number | null
   calismaSaatleri: any
   iptalPolitikasi: string | null
   iptalEdilebilirMiHesap: { edilebilir: boolean; kalanSaat: number; gerekenSaat: number }
+}
+
+type TesisTipRow = {
+  slug: string
+  db_value: string | null
+  yer_etiketi: string | null
+}
+
+function getYerEtiketi(kategori: string | string[] | null | undefined, tipler: TesisTipRow[]): string {
+  let haystack = ''
+  if (kategori != null) {
+    if (Array.isArray(kategori)) {
+      haystack = kategori.map(String).join(' ').toUpperCase()
+    } else {
+      haystack = String(kategori).toUpperCase()
+    }
+  }
+  for (const tip of tipler) {
+    const dbVal = tip.db_value?.trim()
+    if (!dbVal) continue
+    if (haystack.includes(dbVal.toUpperCase())) {
+      const etiket = tip.yer_etiketi?.trim()
+      return etiket || 'Şezlong'
+    }
+  }
+  return 'Şezlong'
 }
 
 function formatRezTarih(iso: string) {
@@ -259,6 +286,7 @@ export default function ProfilScreen() {
   const [accordionGuvenlik, setAccordionGuvenlik] = useState(false)
   const [aktifSezlonglar, setAktifSezlonglar] = useState<any[]>([])
   const [sezlongMap, setSezlongMap] = useState<Record<string, string>>({})
+  const [tesisTipleri, setTesisTipleri] = useState<TesisTipRow[]>([])
   const [epostaBildirim, setEpostaBildirim] = useState(true)
   const handleEpostaBildirimChange = useCallback(async (value: boolean) => {
     setEpostaBildirim(value)
@@ -591,7 +619,7 @@ export default function ProfilScreen() {
             .order('baslangic_tarih', { ascending: false }),
           supabase
             .from('favoriler')
-            .select('id, tesis_id, created_at, tesisler(ad, fotograflar, slug)')
+            .select('id, tesis_id, created_at, tesisler(ad, fotograflar, slug, kategori)')
             .eq('kullanici_id', userData.id)
             .order('created_at', { ascending: false }),
         ])
@@ -736,6 +764,7 @@ export default function ProfilScreen() {
                 grupAd,
                 sehir: r.tesisler?.sehir ?? '',
                 kategori: kategoriLabel,
+                tesisKategoriRaw: r.tesisler?.kategori ?? null,
                 tesisSlug: r.tesisler?.slug ?? '',
                 sezlongLabel,
                 iptalSaatOncesi: tesisPolitikaMap[r.tesis_id]?.iptal_saat_oncesi ?? null,
@@ -785,6 +814,21 @@ export default function ProfilScreen() {
   // useFocusEffect: ilk mount'ta AND her odak kazanımında çalışır (tab geçişi, ödeme sonrası
   // router.replace ile dönüş, vs.). useEffect([], []) yalnızca initial mount'ta çalıştığından
   // ödeme sonrası veya başka sekmeden geçince 0 istatistik sorununun kökü burasıydı.
+  useEffect(() => {
+    let cancelled = false
+    void supabase
+      .from('tesis_tipleri')
+      .select('slug, db_value, yer_etiketi')
+      .eq('aktif', true)
+      .then(({ data, error }) => {
+        if (cancelled || error) return
+        setTesisTipleri((data as TesisTipRow[]) ?? [])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   useFocusEffect(
     useCallback(() => {
       // 30 saniye içinde tekrar odaklanılırsa sorgu atlanır (hızlı tab geçişi koruması).
@@ -1451,7 +1495,7 @@ export default function ProfilScreen() {
                         </Text>
                       ) : null}
                       <Text style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
-                        {t('profile.sunbed_label')}: {sezlongMap[r.sezlong_id] ?? ''}
+                        {t('profile.sunbed_label', { unit: getYerEtiketi(r.tesisler?.kategori, tesisTipleri) })}: {sezlongMap[r.sezlong_id] ?? ''}
                       </Text>
                       <Text style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
                         {t('profile.duration_label')}: {sureGun}
@@ -1793,7 +1837,7 @@ export default function ProfilScreen() {
                       </View>
                       <View style={styles.rezInfoLineRow}>
                         <Ionicons name="bed-outline" size={13} color="#64748b" />
-                        <Text style={styles.rezInfoLine}>{t('profile.sunbed_label')}: {r.sezlongLabel}</Text>
+                        <Text style={styles.rezInfoLine}>{t('profile.sunbed_label', { unit: getYerEtiketi(r.tesisKategoriRaw, tesisTipleri) })}: {r.sezlongLabel}</Text>
                       </View>
                       <View style={styles.rezInfoLineRow}>
                         <Ionicons name="time-outline" size={13} color="#64748b" />
@@ -1973,7 +2017,7 @@ export default function ProfilScreen() {
                       activeOpacity={0.85}
                       onPress={() => router.push(`/tesis/${r.tesisler?.slug}`)}
                     >
-                      <Text style={styles.btnTesiseGitText}>{`${t('facility.select_sunbed')} →`}</Text>
+                      <Text style={styles.btnTesiseGitText}>{`${t('facility.select_sunbed', { unit: getYerEtiketi(r.tesisler?.kategori, tesisTipleri) })} →`}</Text>
                     </TouchableOpacity>
                   </View>
                 </View>

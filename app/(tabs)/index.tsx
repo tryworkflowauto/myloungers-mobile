@@ -34,6 +34,17 @@ type TesisRow = {
   fotograflar: unknown
   puan: number | null
   imkanlar: unknown
+  kategori?: string | string[] | null
+  kategoriler?: string[] | string | null
+}
+
+type TesisTipRow = {
+  slug: string
+  ad: string
+  db_value: string | null
+  ikon: string | null
+  gorsel: string | null
+  sira: number | null
 }
 
 const SCREEN_W = Dimensions.get('window').width
@@ -149,13 +160,51 @@ function parseImkanlarAll(raw: unknown): string[] {
   return []
 }
 
-function firstTesisByTypeKeyword(rows: TesisRow[], type: 'hotel' | 'beach' | 'aqua'): TesisRow | undefined {
-  return rows.find((r) => {
-    const ad = r.ad.toLowerCase()
-    if (type === 'hotel') return ad.includes('hotel')
-    if (type === 'beach') return ad.includes('beach') || ad.includes('club')
-    return ad.includes('aqua') || ad.includes('park')
-  })
+function getKategori(r: TesisRow): string[] {
+  const cats = r.kategoriler
+  let sonuc: string[]
+  if (Array.isArray(cats) && cats.length > 0) {
+    sonuc = cats.map(String)
+  } else if (typeof cats === 'string') {
+    try {
+      const parsed = JSON.parse(cats) as unknown
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        sonuc = (parsed as unknown[]).map(String)
+      } else {
+        sonuc = []
+      }
+    } catch {
+      sonuc = []
+    }
+    if (sonuc.length === 0) {
+      if (Array.isArray(r.kategori)) {
+        sonuc = (r.kategori as unknown[]).map(String)
+      } else if (typeof r.kategori === 'string') {
+        try {
+          const parsed = JSON.parse(r.kategori) as unknown
+          sonuc = Array.isArray(parsed) ? (parsed as unknown[]).map(String) : []
+        } catch {
+          sonuc = []
+        }
+      } else {
+        sonuc = []
+      }
+    }
+  } else {
+    if (Array.isArray(r.kategori)) {
+      sonuc = (r.kategori as unknown[]).map(String)
+    } else if (typeof r.kategori === 'string') {
+      try {
+        const parsed = JSON.parse(r.kategori) as unknown
+        sonuc = Array.isArray(parsed) ? (parsed as unknown[]).map(String) : []
+      } catch {
+        sonuc = []
+      }
+    } else {
+      sonuc = []
+    }
+  }
+  return sonuc
 }
 
 function ReviewsSection() {
@@ -218,6 +267,7 @@ export default function HomeScreen() {
   const isTr = i18n.language.startsWith('tr')
   const isEn = i18n.language.startsWith('en')
   const [rows, setRows] = useState<TesisRow[]>([])
+  const [tesisTipleri, setTesisTipleri] = useState<TesisTipRow[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
 
@@ -269,12 +319,8 @@ export default function HomeScreen() {
   )
 
   const typeOptions = useMemo(
-    () => [
-      { key: 'hotel', label: t('home.facilityTypeHotel') },
-      { key: 'beach', label: t('home.facilityTypeBeachClub') },
-      { key: 'aqua', label: t('home.facilityTypeAquaPark') },
-    ],
-    [t],
+    () => tesisTipleri.map((t) => ({ key: t.slug, label: t.ad })),
+    [tesisTipleri],
   )
 
   const selectedTypeLabel = facilityTypeKey
@@ -288,7 +334,7 @@ export default function HomeScreen() {
       setLoadError(null)
       const { data, error } = await supabase
         .from('tesisler')
-        .select('id, ad, slug, sehir, ilce, fotograflar, puan, imkanlar')
+        .select('id, ad, slug, sehir, ilce, fotograflar, puan, imkanlar, kategori, kategoriler')
         .order('puan', { ascending: false })
       if (cancelled) return
       if (error) {
@@ -299,6 +345,22 @@ export default function HomeScreen() {
       }
       setLoading(false)
     })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    void supabase
+      .from('tesis_tipleri')
+      .select('slug, ad, db_value, ikon, gorsel, sira')
+      .eq('aktif', true)
+      .order('sira', { ascending: true })
+      .then(({ data, error }) => {
+        if (cancelled || error) return
+        setTesisTipleri((data as TesisTipRow[]) ?? [])
+      })
     return () => {
       cancelled = true
     }
@@ -362,23 +424,31 @@ export default function HomeScreen() {
     bannerRef.current?.scrollToIndex({ index: next, animated: true, viewPosition: 0 })
   }
 
-  const categoryRows = useMemo(() => {
-    return [
-      { key: 'hotel' as const, label: t('home.facilityTypeHotel'), row: firstTesisByTypeKeyword(rows, 'hotel') },
-      { key: 'beach' as const, label: t('home.facilityTypeBeachClub'), row: firstTesisByTypeKeyword(rows, 'beach') },
-      { key: 'aqua' as const, label: t('home.facilityTypeAquaPark'), row: firstTesisByTypeKeyword(rows, 'aqua') },
-    ]
-  }, [rows, t])
+  const categoryRows = useMemo(
+    () =>
+      tesisTipleri.map((t) => ({
+        key: t.slug,
+        label: t.ad,
+        gorsel: t.gorsel,
+        ikon: t.ikon,
+        dbValue: t.db_value,
+      })),
+    [tesisTipleri],
+  )
 
   const listToRender = searchMode ? searchResults : rows
 
-  const matchesFacilityType = (ad: string, typeKey: string | null): boolean => {
-    if (!typeKey) return true
-    const s = ad.toLowerCase()
-    if (typeKey === 'hotel') return /hotel|otel|resort|suites/i.test(ad)
-    if (typeKey === 'beach') return /beach|plaj|club|sahil|kumsal/i.test(ad)
-    return /aqua|water|park|aquapark/i.test(ad)
-  }
+  const matchesFacilityType = useCallback(
+    (row: TesisRow, typeSlug: string | null): boolean => {
+      if (!typeSlug) return true
+      const tip = tesisTipleri.find((t) => t.slug === typeSlug)
+      const dbVal = tip?.db_value?.trim()
+      if (!dbVal) return false
+      const needle = dbVal.toUpperCase()
+      return getKategori(row).some((k) => k.toUpperCase().includes(needle))
+    },
+    [tesisTipleri],
+  )
 
   const runSupabaseSearch = useCallback(async () => {
     const hasFilters =
@@ -397,7 +467,7 @@ export default function HomeScreen() {
     }
 
     setSearchLoading(true)
-    let q = supabase.from('tesisler').select('id, ad, slug, sehir, ilce, fotograflar, puan, imkanlar')
+    let q = supabase.from('tesisler').select('id, ad, slug, sehir, ilce, fotograflar, puan, imkanlar, kategori, kategoriler')
 
     const r = region.trim()
     if (r.includes(',')) {
@@ -429,7 +499,7 @@ export default function HomeScreen() {
     }
     let out = (data as TesisRow[]) ?? []
     if (facilityTypeKey) {
-      out = out.filter((row) => matchesFacilityType(row.ad, facilityTypeKey))
+      out = out.filter((row) => matchesFacilityType(row, facilityTypeKey))
     }
     if (secilenImkanlar.length > 0) {
       out = out.filter((row) => {
@@ -465,7 +535,7 @@ export default function HomeScreen() {
 
     setSearchResults(out)
     setSearchMode(true)
-  }, [region, facilityName, facilityTypeKey, minPuan, secilenImkanlar, siralama])
+  }, [region, facilityName, facilityTypeKey, minPuan, secilenImkanlar, siralama, matchesFacilityType])
 
   useEffect(() => {
     if (skipFacilityDropdownSearchRef.current) {
@@ -1197,13 +1267,8 @@ export default function HomeScreen() {
           </View>
           <View style={styles.catStack}>
             {categoryRows.map((c) => {
-              const img =
-                c.key === 'hotel'
-                  ? require('../../assets/images/tesis_kategorisi-otel.png')
-                  : c.key === 'beach'
-                    ? require('../../assets/images/tesis_kategorisi-beach.png')
-                    : require('../../assets/images/tesis_kategorsi-aquapark.png')
-              const badgeText = c.key === 'beach' ? t('home.badgeNew') : t('home.badgePopular')
+              const gorselUri = c.gorsel?.trim() || null
+              const badgeText = t('home.badgePopular')
               return (
                 <TouchableOpacity
                   key={c.key}
@@ -1221,7 +1286,20 @@ export default function HomeScreen() {
                     })
                   }}
                 >
-                  <Image source={img} style={styles.catImageFull} contentFit="cover" />
+                  {gorselUri ? (
+                    <Image source={{ uri: gorselUri }} style={styles.catImageFull} contentFit="cover" />
+                  ) : (
+                    <View
+                      style={[
+                        styles.catImageFull,
+                        { alignItems: 'center', justifyContent: 'center', backgroundColor: '#e2e8f0' },
+                      ]}
+                    >
+                      {c.ikon?.trim() ? (
+                        <Text style={{ fontSize: 48 }}>{c.ikon.trim()}</Text>
+                      ) : null}
+                    </View>
+                  )}
                   <View style={styles.catBadge}>
                     <Text style={styles.catBadgeText}>{badgeText}</Text>
                   </View>

@@ -20,6 +20,8 @@ export default function RegisterScreen() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [passwordAgain, setPasswordAgain] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [showPasswordAgain, setShowPasswordAgain] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [acceptedTerms, setAcceptedTerms] = useState(false)
 
@@ -105,9 +107,12 @@ export default function RegisterScreen() {
                 placeholder={t('register.placeholderPassword')}
                 value={password}
                 onChangeText={setPassword}
-                secureTextEntry
+                secureTextEntry={!showPassword}
                 style={styles.input}
               />
+              <TouchableOpacity onPress={() => setShowPassword((v) => !v)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={18} color="#3333cc" />
+              </TouchableOpacity>
             </View>
             <View style={styles.inputRow}>
               <Ionicons name="lock-closed-outline" size={18} color="#3333cc" />
@@ -115,9 +120,12 @@ export default function RegisterScreen() {
                 placeholder={t('register.placeholderPasswordAgain')}
                 value={passwordAgain}
                 onChangeText={setPasswordAgain}
-                secureTextEntry
+                secureTextEntry={!showPasswordAgain}
                 style={styles.input}
               />
+              <TouchableOpacity onPress={() => setShowPasswordAgain((v) => !v)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name={showPasswordAgain ? 'eye-off-outline' : 'eye-outline'} size={18} color="#3333cc" />
+              </TouchableOpacity>
             </View>
             <View style={styles.termsRow}>
               <TouchableOpacity

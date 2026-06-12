@@ -35,6 +35,7 @@ export default function LoginScreen() {
   const isEn = i18n.language.startsWith('en')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [loginErrVisible, setLoginErrVisible] = useState(false)
   const [loginErrMsg, setLoginErrMsg] = useState('')
   const [googleLoading, setGoogleLoading] = useState(false)
@@ -193,7 +194,10 @@ export default function LoginScreen() {
           </View>
           <View style={styles.inputRow}>
             <Ionicons name="lock-closed-outline" size={22} color="#3333cc" />
-            <TextInput placeholder={t('login.placeholderPassword')} value={password} onChangeText={setPassword} secureTextEntry style={styles.input} />
+            <TextInput placeholder={t('login.placeholderPassword')} value={password} onChangeText={setPassword} secureTextEntry={!showPassword} style={styles.input} />
+            <TouchableOpacity onPress={() => setShowPassword((v) => !v)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={22} color="#3333cc" />
+            </TouchableOpacity>
           </View>
           <View style={styles.buttonRow}>
             <TouchableOpacity onPress={handleLogin} style={styles.loginBtn}>

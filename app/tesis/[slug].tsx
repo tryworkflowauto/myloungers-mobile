@@ -197,6 +197,61 @@ type TesisDetailRow = {
   yer_secimsiz_aciklama?: string | null
   hizmet_secimli?: boolean | null
   saat_zorunlu?: boolean | null
+  kategori?: string | string[] | null
+  kategoriler?: string[] | string | null
+}
+
+type TesisTipRow = {
+  slug: string
+  db_value: string | null
+  yer_etiketi: string | null
+}
+
+function getKategori(r: Pick<TesisDetailRow, 'kategori' | 'kategoriler'>): string[] {
+  const cats = r.kategoriler
+  let sonuc: string[]
+  if (Array.isArray(cats) && cats.length > 0) {
+    sonuc = cats.map(String)
+  } else if (typeof cats === 'string') {
+    try {
+      const parsed = JSON.parse(cats) as unknown
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        sonuc = (parsed as unknown[]).map(String)
+      } else {
+        sonuc = []
+      }
+    } catch {
+      sonuc = []
+    }
+    if (sonuc.length === 0) {
+      if (Array.isArray(r.kategori)) {
+        sonuc = (r.kategori as unknown[]).map(String)
+      } else if (typeof r.kategori === 'string') {
+        try {
+          const parsed = JSON.parse(r.kategori) as unknown
+          sonuc = Array.isArray(parsed) ? (parsed as unknown[]).map(String) : []
+        } catch {
+          sonuc = []
+        }
+      } else {
+        sonuc = []
+      }
+    }
+  } else {
+    if (Array.isArray(r.kategori)) {
+      sonuc = (r.kategori as unknown[]).map(String)
+    } else if (typeof r.kategori === 'string') {
+      try {
+        const parsed = JSON.parse(r.kategori) as unknown
+        sonuc = Array.isArray(parsed) ? (parsed as unknown[]).map(String) : []
+      } catch {
+        sonuc = []
+      }
+    } else {
+      sonuc = []
+    }
+  }
+  return sonuc
 }
 
 type ImkanListItem = { name: string; name_en?: string; emoji: string }
@@ -378,6 +433,7 @@ export default function TesisDetailScreen() {
   const slug = paramSlug(slugParam)
 
   const [row, setRow] = useState<TesisDetailRow | null>(null)
+  const [tesisTipleri, setTesisTipleri] = useState<TesisTipRow[]>([])
   const localizedAboutKisa = useMemo(
     () => (row ? getLocalizedField(row, 'kisa_aciklama', currentLang) : ''),
     [row, currentLang],
@@ -448,6 +504,21 @@ export default function TesisDetailScreen() {
   const refreshRezervedRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
+    let cancelled = false
+    void supabase
+      .from('tesis_tipleri')
+      .select('slug, db_value, yer_etiketi')
+      .eq('aktif', true)
+      .then(({ data, error }) => {
+        if (cancelled || error) return
+        setTesisTipleri((data as TesisTipRow[]) ?? [])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
     if (!slug) {
       setLoading(false)
       return
@@ -457,7 +528,7 @@ export default function TesisDetailScreen() {
     void supabase
       .from('tesisler')
       .select(
-        'id, ad, slug, sehir, ilce, fotograflar, puan, kisa_aciklama, kisa_aciklama_en, aciklama, detayli_aciklama, detayli_aciklama_en, imkanlar, calisma_saatleri, adres, video_url, ulasim, kurallar, kampanya_notlari, telefon, iletisim_numarasi, enlem, boylam, yer_secimsiz, yer_secimsiz_aciklama, hizmet_secimli, saat_zorunlu',
+        'id, ad, slug, sehir, ilce, fotograflar, puan, kisa_aciklama, kisa_aciklama_en, aciklama, detayli_aciklama, detayli_aciklama_en, imkanlar, calisma_saatleri, adres, video_url, ulasim, kurallar, kampanya_notlari, telefon, iletisim_numarasi, enlem, boylam, yer_secimsiz, yer_secimsiz_aciklama, hizmet_secimli, saat_zorunlu, kategori, kategoriler',
       )
       .eq('slug', slug)
       .maybeSingle()
@@ -749,6 +820,21 @@ export default function TesisDetailScreen() {
         t(`days_short_map.${name}`, { defaultValue: name }),
       )
     : []
+  const yerEtiketi = useMemo(() => {
+    if (!row) return 'Şezlong'
+    const kategoriler = getKategori(row)
+    for (const tip of tesisTipleri) {
+      const dbVal = tip.db_value?.trim()
+      if (!dbVal) continue
+      const needle = dbVal.toUpperCase()
+      if (kategoriler.some((k) => k.toUpperCase().includes(needle))) {
+        const etiket = tip.yer_etiketi?.trim()
+        return etiket || 'Şezlong'
+      }
+    }
+    return 'Şezlong'
+  }, [row, tesisTipleri])
+  const yerEtiketiLower = useMemo(() => yerEtiketi.toLocaleLowerCase('tr-TR'), [yerEtiketi])
   const yerSecimsizMi = row?.yer_secimsiz === true
   const hizmetSecimliMi = row?.hizmet_secimli === true
   const saatZorunluMu = row?.saat_zorunlu === true
@@ -1249,8 +1335,8 @@ export default function TesisDetailScreen() {
                       <Ionicons name="grid-outline" size={18} color="#fff" />
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.sectionTitle, { color: '#fff' }]}>{t('facility.select_sunbed_title')}</Text>
-                      <Text style={{ fontSize: 11, color: '#fff' }}>{t('facility.select_sunbed_subtitle')}</Text>
+                      <Text style={[styles.sectionTitle, { color: '#fff' }]}>{t('facility.select_sunbed_title', { unit: yerEtiketi })}</Text>
+                      <Text style={{ fontSize: 11, color: '#fff' }}>{t('facility.select_sunbed_subtitle', { unit: yerEtiketi })}</Text>
                     </View>
                   </View>
                   <Ionicons name={acikPlan ? 'chevron-up' : 'chevron-down'} size={20} color="#fff" />
@@ -1409,7 +1495,7 @@ export default function TesisDetailScreen() {
               <View style={styles.paxRow}>
                 <View style={styles.paxLabelWrap}>
                   <Text style={styles.paxLabel}>{'👥 '}{t('facility.guest_count')}</Text>
-                  <Text style={styles.paxSub}>{t('facility.max_guests')}</Text>
+                  <Text style={styles.paxSub}>{t('facility.max_guests', { unitLower: yerEtiketiLower })}</Text>
                 </View>
                 <View style={styles.paxControls}>
                   <TouchableOpacity
@@ -1547,8 +1633,8 @@ export default function TesisDetailScreen() {
                         <View style={{ alignItems: 'flex-end' }}>
                           <Text style={{ fontSize: 11, color: '#fff', fontWeight: '700' }}>
                             {toplamSezlong === 1
-                              ? t('facility.sunbed_singular', { count: toplamSezlong })
-                              : t('facility.sunbed_plural', { count: toplamSezlong })}
+                              ? t('facility.sunbed_singular', { count: toplamSezlong, unitLower: yerEtiketiLower })
+                              : t('facility.sunbed_plural', { count: toplamSezlong, unitLower: yerEtiketiLower })}
                           </Text>
                           <Text style={{ fontSize: 10, color: '#fff', opacity: 0.85 }}>
                             {t('facility.occupancy_percent', { percent: dolulukYuzde })}
@@ -1636,6 +1722,7 @@ export default function TesisDetailScreen() {
                     {t('facility.sunbeds_selected', {
                       count: secilenSezlongIds.size,
                       suffix: i18n.language?.startsWith('en') && secilenSezlongIds.size !== 1 ? 's' : '',
+                      unitLower: yerEtiketiLower,
                     })}
                   </Text>
                 </View>
@@ -2552,7 +2639,7 @@ export default function TesisDetailScreen() {
           <View style={styles.paxModalCard}>
             <Text style={styles.paxModalIcon}>⚠️</Text>
             <Text style={styles.paxModalTitle}>{t('facility.warning')}</Text>
-            <Text style={styles.paxModalMsg}>{t('facility.multi_sunbed_message')}</Text>
+            <Text style={styles.paxModalMsg}>{t('facility.multi_sunbed_message', { unitLower: yerEtiketiLower })}</Text>
             <TouchableOpacity
               style={styles.paxModalBtn}
               activeOpacity={0.85}
@@ -2649,7 +2736,7 @@ export default function TesisDetailScreen() {
               }
 
               if (!yerSecimsizMi && !hizmetSecimliMi && secilenSezlongIds.size === 0) {
-                setValidUyariMesaj(t('facility.select_at_least_one'))
+                setValidUyariMesaj(t('facility.select_at_least_one', { unitLower: yerEtiketiLower }))
                 setValidUyariVisible(true)
                 setAcikPlan(true)
                 scrollViewRef.current?.scrollTo({
@@ -2693,9 +2780,7 @@ export default function TesisDetailScreen() {
                   if (bosSezlonglar.length < paxCount) {
                     setRezButtonLoading(false)
                     setValidUyariMesaj(
-                      t('facility.not_enough_seats_on_date', {
-                        defaultValue: 'Seçtiğiniz tarihte yeterli yer yok',
-                      }),
+                      t('facility.not_enough_seats_on_date', { unitLower: yerEtiketiLower }),
                     )
                     setValidUyariVisible(true)
                     setAcikPlan(true)
@@ -2723,9 +2808,7 @@ export default function TesisDetailScreen() {
                   if (bosSezlonglar.length < paxCount) {
                     setRezButtonLoading(false)
                     setValidUyariMesaj(
-                      t('facility.not_enough_seats_on_date', {
-                        defaultValue: 'Seçtiğiniz tarihte yeterli yer yok',
-                      }),
+                      t('facility.not_enough_seats_on_date', { unitLower: yerEtiketiLower }),
                     )
                     setValidUyariVisible(true)
                     setAcikPlan(true)
@@ -2774,6 +2857,21 @@ export default function TesisDetailScreen() {
                 // INSERT yapılır. Bu kayıtlar rezervasyon-ozet'te 10dk boyunca koltuk
                 // kilitler; vazgeçilirse iptal edilir, ödeme yapılırsa beklemede'ye geçer.
                 const { data: { user: authUser } } = await supabase.auth.getUser()
+                if (!authUser) {
+                  setRezButtonLoading(false)
+                  Alert.alert(
+                    t('reservation.error_login_required'),
+                    t('reservation.error_login_body'),
+                    [
+                      {
+                        text: 'Tamam',
+                        onPress: () =>
+                          router.push({ pathname: '/giris', params: { redirect: `/tesis/${slug}` } }),
+                      },
+                    ],
+                  )
+                  return
+                }
                 const rezerveliKadar = new Date(Date.now() + 10 * 60 * 1000).toISOString()
                 const tarihIso = secilenTarih.toISOString().split('T')[0]
                 const bekleyenIds: string[] = []
@@ -2785,7 +2883,7 @@ export default function TesisDetailScreen() {
                     .from('rezervasyonlar')
                     .insert({
                       tesis_id: row.id,
-                      kullanici_id: authUser?.id ?? null,
+                      kullanici_id: authUser.id,
                       sezlong_id: sezlongId,
                       sezlong_ids: [sezlongId],
                       baslangic_tarih: tarihIso,
@@ -2823,6 +2921,7 @@ export default function TesisDetailScreen() {
                     bekleyen_rez_ids: bekleyenIds.join(','),
                     hizmet_secimli: hizmetSecimliMi ? '1' : '',
                     saat: secilenSaat,
+                    yerEtiketi,
                   },
                 })
               } catch {

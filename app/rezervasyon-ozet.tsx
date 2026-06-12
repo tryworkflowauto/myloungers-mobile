@@ -113,7 +113,10 @@ export default function RezervasyonOzet() {
     bekleyen_rez_ids?: string
     hizmet_secimli?: string
     saat?: string
+    yerEtiketi?: string
   }>()
+
+  const yerEtiketi = (params.yerEtiketi as string) || 'Şezlong'
 
   const tesis_id = params.tesis_id
   const tesis_adi = params.tesis_adi ?? ''
@@ -382,7 +385,7 @@ export default function RezervasyonOzet() {
         : []
 
       if (sezlongIdList.length === 0 && bekleyenRezIds.length === 0) {
-        Alert.alert(t('reservation.error_title'), t('reservation.error_sunbed_missing'))
+        Alert.alert(t('reservation.error_title'), t('reservation.error_sunbed_missing', { unit: yerEtiketi }))
         return
       }
 
@@ -524,7 +527,7 @@ export default function RezervasyonOzet() {
             <Text style={styles.countdownEmoji}>⏱️</Text>
             <View style={styles.countdownTexts}>
               <Text style={[styles.countdownMain, sayacUrgent && styles.countdownMainUrgent]}>
-                {`${t('reservation.holding_sunbed')}: ${sayacDakika}:${sayacSaniye}`}
+                {`${t('reservation.holding_sunbed', { unit: yerEtiketi })}: ${sayacDakika}:${sayacSaniye}`}
               </Text>
               <Text style={[styles.countdownSub, sayacUrgent && styles.countdownSubUrgent]}>
                 {t('reservation.complete_in_time')}
@@ -594,7 +597,7 @@ export default function RezervasyonOzet() {
                         value={saat}
                       />
                     ) : null}
-                    <SumRow icon="🛏" label={t('reservation.sunbed_label')} value={ozetYerVeyaHizmet || '—'} />
+                    <SumRow icon="🛏" label={t('reservation.sunbed_label', { unit: yerEtiketi })} value={ozetYerVeyaHizmet || '—'} />
                     <SumRow icon="👥" label={t('reservation.guest_label')} value={t('reservation.guest_count', { count: kisiNum })} />
                     <SumRow
                       icon="📆"
@@ -618,7 +621,7 @@ export default function RezervasyonOzet() {
               <View style={styles.card}>
                 <Text style={styles.cardTitle}>{t('reservation.reservation_detail')}</Text>
                 <Row label={t('reservation.date_label')} value={tarih || '—'} />
-                <Row label={t('reservation.sunbed_label')} value={ozetYerVeyaHizmet || '—'} />
+                <Row label={t('reservation.sunbed_label', { unit: yerEtiketi })} value={ozetYerVeyaHizmet || '—'} />
                 <Row
                   label={t('reservation.duration_label')}
                   value={
@@ -633,7 +636,7 @@ export default function RezervasyonOzet() {
               {/* ── Fiyat özeti ── */}
               <View style={styles.card}>
                 <Text style={styles.cardTitle}>{t('reservation.price_summary')}</Text>
-                <Row label={t('reservation.sunbed_fee')} value={formatTl(sezlongUcreti)} />
+                <Row label={t('reservation.sunbed_fee', { unit: yerEtiketi })} value={formatTl(sezlongUcreti)} />
                 <View style={styles.totalRow}>
                   <Text style={styles.totalLabel}>Toplam</Text>
                   <Text style={styles.totalValue}>{formatTl(toplam)}</Text>
@@ -653,9 +656,9 @@ export default function RezervasyonOzet() {
               {kisiler.map((kisi, index) => {
                 const sezlongAdlari = sezlong_adi.split(',')
                 const buSezlong = hizmetSecimli
-                  ? grup_adi.trim() || t('reservation.sunbed_form_title', { n: index + 1 })
+                  ? grup_adi.trim() || t('reservation.sunbed_form_title', { n: index + 1, unit: yerEtiketi })
                   : sezlongAdlari[index]?.trim() ||
-                    t('reservation.sunbed_form_title', { n: index + 1 })
+                    t('reservation.sunbed_form_title', { n: index + 1, unit: yerEtiketi })
                 const isLast = index === kisiler.length - 1
                 return (
                   <View key={index} style={[styles.card, !isLast && { marginBottom: 0, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, borderBottomWidth: 0 }]}>
@@ -665,7 +668,7 @@ export default function RezervasyonOzet() {
                     <Text style={styles.cardTitle}>
                       {`${index + 1}. ${t('reservation.personal_info_title')}`}
                       <Text style={styles.cardTitleSub}>
-                        {`  (${t('reservation.sunbed_label')}: ${buSezlong})`}
+                        {`  (${t('reservation.sunbed_label', { unit: yerEtiketi })}: ${buSezlong})`}
                       </Text>
                     </Text>
                     <Text style={styles.inputLabel}>Ad Soyad *</Text>
