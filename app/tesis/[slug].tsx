@@ -125,13 +125,13 @@ async function fetchOnayliYorumlarForTesis(tesisId: string): Promise<{ list: Yor
       .from('yorumlar')
       .select(YORUM_ONAYLI_SELECT)
       .eq('tesis_id', tesisId)
-      .eq('durum', 'onaylı')
+      .in('durum', ['onaylı', 'cevaplandi'])
       .order('created_at', { ascending: false }),
     supabase
       .from('yorumlar')
       .select('id', { count: 'exact' })
       .eq('tesis_id', tesisId)
-      .eq('durum', 'onaylı'),
+      .in('durum', ['onaylı', 'cevaplandi']),
   ])
   return {
     list: (listRes.data ?? []) as YorumRow[],

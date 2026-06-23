@@ -217,7 +217,7 @@ function ReviewsSection() {
     void supabase
       .from('yorumlar')
       .select('id, yorum, puan, musteri_adi, tesis_id, tesisler(ad)')
-      .eq('durum', 'onaylı')
+      .in('durum', ['onaylı', 'cevaplandi'])
       .order('created_at', { ascending: false })
       .limit(5)
       .then(({ data }) => {
