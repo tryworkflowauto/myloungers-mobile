@@ -82,7 +82,13 @@
       "expo-apple-authentication",
       "expo-localization",
       "expo-secure-store",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-build-properties",
+        {
+          "ios": { "useModularHeaders": true }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
