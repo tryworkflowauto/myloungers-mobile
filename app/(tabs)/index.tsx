@@ -335,6 +335,7 @@ export default function HomeScreen() {
       const { data, error } = await supabase
         .from('tesisler')
         .select('id, ad, slug, sehir, ilce, fotograflar, puan, imkanlar, kategori, kategoriler')
+        .eq('aktif', true)
         .order('puan', { ascending: false })
       if (cancelled) return
       if (error) {
@@ -467,7 +468,7 @@ export default function HomeScreen() {
     }
 
     setSearchLoading(true)
-    let q = supabase.from('tesisler').select('id, ad, slug, sehir, ilce, fotograflar, puan, imkanlar, kategori, kategoriler')
+    let q = supabase.from('tesisler').select('id, ad, slug, sehir, ilce, fotograflar, puan, imkanlar, kategori, kategoriler').eq('aktif', true)
 
     const r = region.trim()
     if (r.includes(',')) {
@@ -552,6 +553,7 @@ export default function HomeScreen() {
         const { data, error } = await supabase
           .from('tesisler')
           .select('id, ad, sehir, ilce, fotograflar')
+          .eq('aktif', true)
           .ilike('ad', `%${q}%`)
           .limit(10)
         if (error) {

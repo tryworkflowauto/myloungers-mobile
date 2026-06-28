@@ -531,6 +531,7 @@ export default function TesisDetailScreen() {
         'id, ad, slug, sehir, ilce, fotograflar, puan, kisa_aciklama, kisa_aciklama_en, aciklama, detayli_aciklama, detayli_aciklama_en, imkanlar, calisma_saatleri, adres, video_url, ulasim, kurallar, kampanya_notlari, telefon, iletisim_numarasi, enlem, boylam, yer_secimsiz, yer_secimsiz_aciklama, hizmet_secimli, saat_zorunlu, kategori, kategoriler',
       )
       .eq('slug', slug)
+      .eq('aktif', true)
       .maybeSingle()
       .then(({ data, error }) => {
         console.log('SLUG:', slug, 'DATA:', data, 'ERROR:', error)

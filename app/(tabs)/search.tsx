@@ -284,7 +284,7 @@ export default function SearchScreen() {
     setLoading(true)
 
     const runQuery = (selectCols: string) => {
-      return supabase.from('tesisler').select(selectCols).order('puan', { ascending: false })
+      return supabase.from('tesisler').select(selectCols).eq('aktif', true).order('puan', { ascending: false })
     }
 
     const selectBase = 'id, ad, slug, kategori, kategoriler, sehir, ilce, fotograflar, puan, imkanlar'
@@ -353,6 +353,7 @@ export default function SearchScreen() {
     const { data, error } = await supabase
       .from('tesisler')
       .select(`${selectBase}, enlem, boylam`)
+      .eq('aktif', true)
       .order('puan', { ascending: false })
     let rows: TesisRow[] = []
     if (!error && data) {
