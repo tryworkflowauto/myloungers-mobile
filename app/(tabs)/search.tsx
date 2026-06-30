@@ -34,6 +34,8 @@ export type TesisRow = {
   imkanlar: unknown
   enlem?: number | null
   boylam?: number | null
+  min_fiyat?: number | null
+  max_fiyat?: number | null
 }
 
 type TesisTipRow = {
@@ -287,7 +289,7 @@ export default function SearchScreen() {
       return supabase.from('tesisler').select(selectCols).eq('aktif', true).order('puan', { ascending: false })
     }
 
-    const selectBase = 'id, ad, slug, kategori, kategoriler, sehir, ilce, fotograflar, puan, imkanlar'
+    const selectBase = 'id, ad, slug, kategori, kategoriler, sehir, ilce, fotograflar, puan, imkanlar, min_fiyat, max_fiyat'
     let { data, error } = await runQuery(`${selectBase}, enlem, boylam`)
     let hasLatLonCols = true
     if (error) {
@@ -349,7 +351,7 @@ export default function SearchScreen() {
     setFilterTab('all')
     setFacilityName('')
     setFacilityTypeKey(null)
-    const selectBase = 'id, ad, slug, kategori, kategoriler, sehir, ilce, fotograflar, puan, imkanlar'
+    const selectBase = 'id, ad, slug, kategori, kategoriler, sehir, ilce, fotograflar, puan, imkanlar, min_fiyat, max_fiyat'
     const { data, error } = await supabase
       .from('tesisler')
       .select(`${selectBase}, enlem, boylam`)
@@ -1055,6 +1057,31 @@ export default function SearchScreen() {
                         </Text>
                       </View>
                     ) : null}
+                    {(() => {
+                      const mf = item.min_fiyat != null ? Number(item.min_fiyat) : NaN
+                      if (!Number.isFinite(mf) || mf <= 0) return null
+                      const xf = item.max_fiyat != null ? Number(item.max_fiyat) : NaN
+                      const showFrom = Number.isFinite(xf) && xf > mf
+                      const amount = `₺${mf.toLocaleString(isTr ? 'tr-TR' : 'en-US')}`
+                      return (
+                        <Text style={{ marginBottom: 6 }} numberOfLines={1}>
+                          {showFrom ? (
+                            isTr ? (
+                              <Text style={{ fontSize: 12 }}>
+                                <Text style={{ fontWeight: '700', color: '#0A1628' }}>{amount}</Text>
+                                <Text style={{ fontWeight: '500', color: '#64748b', fontSize: 11 }}>'den başlayan</Text>
+                              </Text>
+                            ) : (
+                              <Text style={{ fontSize: 11, color: '#64748b' }}>
+                                from <Text style={{ fontWeight: '700', color: '#0A1628', fontSize: 12 }}>{amount}</Text>
+                              </Text>
+                            )
+                          ) : (
+                            <Text style={{ fontWeight: '700', color: '#0A1628', fontSize: 12 }}>{amount}</Text>
+                          )}
+                        </Text>
+                      )
+                    })()}
                     <TouchableOpacity style={styles.loungerBtn} activeOpacity={0.9} onPress={() => router.push(`/tesis/${encodeURIComponent(item.slug)}`)}>
                       <Text style={styles.loungerBtnText}>{t('search.selectLounger', { unit: getYerEtiketi(item, tesisTipleri) })}</Text>
                     </TouchableOpacity>

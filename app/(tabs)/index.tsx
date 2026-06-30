@@ -36,6 +36,8 @@ type TesisRow = {
   imkanlar: unknown
   kategori?: string | string[] | null
   kategoriler?: string[] | string | null
+  min_fiyat?: number | null
+  max_fiyat?: number | null
 }
 
 type TesisTipRow = {
@@ -334,7 +336,7 @@ export default function HomeScreen() {
       setLoadError(null)
       const { data, error } = await supabase
         .from('tesisler')
-        .select('id, ad, slug, sehir, ilce, fotograflar, puan, imkanlar, kategori, kategoriler')
+        .select('id, ad, slug, sehir, ilce, fotograflar, puan, imkanlar, kategori, kategoriler, min_fiyat, max_fiyat')
         .eq('aktif', true)
         .order('puan', { ascending: false })
       if (cancelled) return
@@ -468,7 +470,7 @@ export default function HomeScreen() {
     }
 
     setSearchLoading(true)
-    let q = supabase.from('tesisler').select('id, ad, slug, sehir, ilce, fotograflar, puan, imkanlar, kategori, kategoriler').eq('aktif', true)
+    let q = supabase.from('tesisler').select('id, ad, slug, sehir, ilce, fotograflar, puan, imkanlar, kategori, kategoriler, min_fiyat, max_fiyat').eq('aktif', true)
 
     const r = region.trim()
     if (r.includes(',')) {
@@ -693,6 +695,34 @@ export default function HomeScreen() {
                 </Text>
               </View>
             ) : null}
+            {(() => {
+              const mf = item.min_fiyat != null ? Number(item.min_fiyat) : NaN
+              if (!Number.isFinite(mf) || mf <= 0) return null
+              const xf = item.max_fiyat != null ? Number(item.max_fiyat) : NaN
+              const showFrom = Number.isFinite(xf) && xf > mf
+              const amount = `₺${mf.toLocaleString(isEn ? 'en-US' : 'tr-TR')}`
+              return (
+                <Text
+                  style={{ marginTop: konum ? 4 : 8, marginBottom: tags.length > 0 ? 8 : 0 }}
+                  numberOfLines={1}
+                >
+                  {showFrom ? (
+                    isEn ? (
+                      <Text style={{ fontSize: 12, color: '#64748b' }}>
+                        from <Text style={{ fontWeight: '700', color: '#0A1628', fontSize: 15 }}>{amount}</Text>
+                      </Text>
+                    ) : (
+                      <Text style={{ fontSize: 12 }}>
+                        <Text style={{ fontWeight: '700', color: '#0A1628', fontSize: 15 }}>{amount}</Text>
+                        <Text style={{ fontWeight: '500', color: '#64748b', fontSize: 12 }}>'den başlayan</Text>
+                      </Text>
+                    )
+                  ) : (
+                    <Text style={{ fontWeight: '700', color: '#0A1628', fontSize: 15 }}>{amount}</Text>
+                  )}
+                </Text>
+              )
+            })()}
             {tags.length > 0 ? (
               <View style={styles.tagsRow}>
                 {tags.map((tag, ti) => (
