@@ -86,7 +86,21 @@
       [
         "expo-build-properties",
         {
-          "ios": { "useFrameworks": "static" }
+          "ios": {
+            "useFrameworks": "static"
+          }
+        }
+      ],
+      [
+        "react-native-fbsdk-next",
+        {
+          "appID": "2206726020151729",
+          "clientToken": "d280ffc26bae3e14ca53291e789ee0d8",
+          "displayName": "MyLoungers",
+          "scheme": "fb2206726020151729",
+          "advertiserIDCollectionEnabled": true,
+          "autoLogAppEventsEnabled": true,
+          "isAutoInitEnabled": true
         }
       ]
     ],
