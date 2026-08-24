@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons'
 import { useLocalSearchParams, useRouter } from 'expo-router'
+import * as StoreReview from 'expo-store-review'
 import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
@@ -18,9 +19,16 @@ export default function OdemeWebview() {
 
   // Guard: realtime, polling ve URL handler'larından ilk tetiklenen navigate eder, diğerleri pas geçer
   const navigatedRef = useRef(false)
-  function goToProfile() {
+  async function goToProfile() {
     if (navigatedRef.current) return
     navigatedRef.current = true
+    try {
+      if (await StoreReview.isAvailableAsync()) {
+        await StoreReview.requestReview()
+      }
+    } catch {
+      // cihaz desteklemiyorsa veya native API hata verirse sessizce geç
+    }
     router.replace('/(tabs)/profil')
   }
 
